@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>VoxAI</title>
+  <style>
+    body { background: #121212; color: white; font-family: sans-serif; padding: 2rem; }
+    button { padding: 0.6rem 1.2rem; margin-right: 0.5rem;
+             border: none; border-radius: 6px; cursor: pointer;
+             background: #444; color: #ccc; font-size: 1rem; }
+    #startBtn.active { background: #28a745; }
+    #stopBtn.active  { background: #dc3545; }
+    .card { background: #1a1a1a; padding: 1rem; border-radius: 8px; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>🎧 VoxAI</h1>
+  <button id="startBtn">Start</button>
+  <button id="stopBtn">Stop</button>
+  <button onclick="askAI()">Ask AI</button>
+
+  <div class="card">
+    <h3>Transcript</h3>
+    <div id="transcript">...</div>
+  </div>
+  <div class="card">
+    <h3>Answer</h3>
+    <div id="answer">Waiting...</div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    let recording = false;
+
+    document.getElementById('startBtn').onclick = () => {
+      recording = true; updateButtons();
+      ipcRenderer.send('to-python', 'START');
+    };
+    document.getElementById('stopBtn').onclick = () => {
+      recording = false; updateButtons();
+      ipcRenderer.send('to-python', 'STOP');
+    };
+    window.askAI = () => {
+      document.getElementById('answer').textContent = '';
+      ipcRenderer.send('to-python', 'ASK::');
+    };
+
+    function updateButtons() {
+      document.getElementById('startBtn').classList.toggle('active', recording);
+      document.getElementById('stopBtn').classList.toggle('active', !recording);
+    }
+
+    ipcRenderer.on('from-python', (_, raw) => {
+      const [kind, payload] = raw.split('::');
+      if (kind === 'TRANSCRIBED') {
+        document.getElementById('transcript').textContent = payload;
+      } else if (kind === 'CHUNK' && payload !== '[END]') {
+        document.getElementById('answer').textContent += payload;
+      }
+    });
+
+    updateButtons();
+  </script>
+</body>
+</html>
