@@ -1,6 +1,6 @@
 # VoxAI
 
-![VoxAI Logo](assets/logo-512.png)
+![VoxAI Logo](assets/logo.png)
 
 **Voice-driven AI assistant that captures audio from any app (Teams, Zoom, browsers) and streams live, textual answers—ideal for interviews, meetings, and knowledge work.**
 
