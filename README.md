@@ -2,9 +2,17 @@
 
 ![VoxAI Logo](https://raw.githubusercontent.com/rtiwariops/voxai/main/assets/logo.png)
 
-**Voice-driven AI assistant that captures audio from any app (Teams, Zoom, browsers) and streams live, textual answers—ideal for interviews, meetings, and knowledge work.**
+Voice-driven AI assistant capturing desktop audio and streaming live, textual answers—ideal for interviews, meetings, and knowledge work.
 
 ---
+
+## ⚙️ Prerequisites
+
+- **Python ≥3.7**  
+- **Node.js ≥14**  
+- **Electron** (global)  
+  ```bash
+  npm install -g electron
 
 ## 🚀 Quickstart
 

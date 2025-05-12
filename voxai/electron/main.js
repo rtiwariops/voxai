@@ -1,35 +1,15 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
-const path = require('path');
-const { spawn } = require('child_process');
-
-let pyProc;
-
-function createWindow() {
-  const win = new BrowserWindow({
-    width: 800, height: 600,
-    webPreferences: { nodeIntegration: true, contextIsolation: false }
-  });
-  win.loadFile(path.join(__dirname, 'index.html'));
-
-  // spawn backend.core
-  pyProc = spawn(process.env.PYTHON_EXECUTABLE || 'python3', ['-m','voxai.core'], {
-    cwd: path.join(__dirname, '..')
-  });
-  pyProc.stdout.on('data', data => {
-    data.toString().split('\n').filter(Boolean).forEach(line => {
-      if (line.startsWith('from-python:')) {
-        win.webContents.send('from-python', line.replace('from-python:', ''));
-      }
-    });
-  });
-
-  ipcMain.on('to-python', (_, msg) => {
-    pyProc.stdin.write(msg + '\n');
-  });
-
-  app.on('before-quit', () => {
-    pyProc.kill();
-  });
+const {app,BrowserWindow,ipcMain} = require('electron');
+const path=require('path');
+const {spawn}=require('child_process');
+let py;
+function createWin(){
+  const w=new BrowserWindow({width:800,height:600,webPreferences:{nodeIntegration:true,contextIsolation:false}});
+  w.loadFile(path.join(__dirname,'index.html'));
+  py=spawn('python3',['-m','voxai.core'],{cwd:path.join(__dirname,'..')});
+  py.stdout.on('data',d=>d.toString().split('\n').filter(Boolean).forEach(l=>{
+    if(l.startsWith('from-python:')) w.webContents.send('from-python',l.replace('from-python:',''));
+  }));
+  ipcMain.on('to-python',(_,m)=>py.stdin.write(m+'\n'));
+  app.on('before-quit',()=>py.kill());
 }
-
-app.whenReady().then(createWindow);
+app.whenReady().then(createWin);
