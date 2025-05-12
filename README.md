@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # VoxAI
 
 ![VoxAI Logo](assets/logo-512.png)
