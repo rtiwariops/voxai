@@ -1,7 +1,6 @@
 # VoxAI
 [![PyPI version](https://img.shields.io/pypi/v/voxai)](https://pypi.org/project/voxai/)  
 [![License MIT](https://img.shields.io/pypi/l/voxai)](https://github.com/rtiwariops/voxai/blob/main/LICENSE)  
-[![Build Status](https://github.com/rtiwariops/voxai/actions/workflows/ci.yml/badge.svg)]
 
 ![VoxAI Logo](https://raw.githubusercontent.com/rtiwariops/voxai/main/assets/logo.png)
 
