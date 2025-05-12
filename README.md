@@ -27,9 +27,9 @@
    pip install .
    ```
 
-4. **Install Electron (if not already)**  
+4.  **Run** VoxAI
    ```bash
-   npm install -g electron
+   voxai
    ```
 
 5. **Configure environment variables**  
