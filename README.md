@@ -1,6 +1,6 @@
 # VoxAI
 
-![VoxAI Logo](assets/logo.png)
+![VoxAI Logo](https://raw.githubusercontent.com/rtiwariops/voxai/main/assets/logo.png)
 
 **Voice-driven AI assistant that captures audio from any app (Teams, Zoom, browsers) and streams live, textual answers—ideal for interviews, meetings, and knowledge work.**
 
@@ -10,9 +10,9 @@
 
 1. **Clone the repo**  
    ```bash
-   git clone https://github.com/rtiwariops/VoxAI.git
-   cd VoxAI
-   ```
+   git clone https://github.com/rtiwariops/voxai.git
+   cd voxai
+
 
 2. **Create & activate a Python virtual environment**  
    ```bash

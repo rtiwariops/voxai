@@ -2,6 +2,6 @@ include README.md
 include LICENSE
 include .env.example
 recursive-include backend *.py
-recursive-include assets *
-recursive-include electron *
+prune assets
+prune electron
 
