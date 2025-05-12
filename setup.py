@@ -1,12 +1,13 @@
 from setuptools import setup, find_packages
 from pathlib import Path
 
+# Read the long description from README.md
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="voxai",
-    version="0.1.4",
+    version="0.1.5",
     description="Voice-driven AI assistant for real-time transcription and Gemini integration.",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -26,8 +27,13 @@ setup(
             "voxai = voxai.cli:main",
         ],
     },
+    # Include only the small Electron UI source files in the wheel:
     package_data={
-        "voxai": ["electron/**/*"],
+        "voxai": [
+            "electron/package.json",
+            "electron/main.js",
+            "electron/index.html",
+        ],
     },
     classifiers=[
         "Programming Language :: Python :: 3",
