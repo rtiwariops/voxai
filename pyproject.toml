@@ -1,3 +1,41 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=65.5", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "voxai"
+version = "0.1.33"
+description = "Voice-driven AI assistant for technical interview–style responses."
+readme = "README.md"
+requires-python = ">=3.7"
+
+# ✔ Here is the only “license” metadata you need:
+license = "MIT"
+
+authors = [
+  { name = "Ravi Tiwari", email = "tiwarirobbie@gmail.com" }
+]
+
+dependencies = [
+  "sounddevice>=0.4.6",
+  "soundfile>=0.11.0",
+  "faster-whisper>=0.1.6",
+  "google-generativeai>=0.5.1",
+  "python-dotenv>=1.0.0",
+  "numpy>=1.24.0"
+]
+
+classifiers = [
+  "Programming Language :: Python :: 3.8",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Intended Audience :: Developers"
+]
+
+[project.urls]
+"Documentation" = "https://voxai.readthedocs.io/"
+"Source"        = "https://github.com/rtiwariops/voxai"
+"Issue Tracker" = "https://github.com/rtiwariops/voxai/issues"
+
+[project.scripts]
+voxai = "voxai.cli:main"
