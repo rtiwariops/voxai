@@ -4,14 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voxai"
-version = "0.1.38"
+version = "0.1.39"                # ← bump this to your new version
 description = "Voice-driven AI assistant for technical interview–style responses."
 readme = "README.md"
 requires-python = ">=3.7"
 license = "MIT"
+
 authors = [
   { name = "Ravi Tiwari", email = "tiwarirobbie@gmail.com" }
 ]
+
 dependencies = [
   "sounddevice>=0.4.6",
   "soundfile>=0.11.0",
@@ -20,6 +22,7 @@ dependencies = [
   "python-dotenv>=1.0.0",
   "numpy>=1.24.0"
 ]
+
 classifiers = [
   "Programming Language :: Python :: 3.8",
   "Operating System :: OS Independent",
@@ -28,14 +31,13 @@ classifiers = [
 ]
 
 [project.urls]
-"Documentation" = "https://voxai.readthedocs.io/"
-"Source"        = "https://github.com/rtiwariops/voxai"
+Documentation = "https://voxai.readthedocs.io/"
+Source        = "https://github.com/rtiwariops/voxai"
 "Issue Tracker" = "https://github.com/rtiwariops/voxai/issues"
 
 [project.scripts]
 voxai = "voxai.cli:main"
 
-# ─── Explicit package discovery ───────────────────────────────────────────────
 [tool.setuptools.packages.find]
 include = ["voxai*"]
 exclude = ["assets*"]
