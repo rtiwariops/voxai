@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voxai"
-version = "0.1.42"                
+version = "0.1.43"                
 description = "Voice-driven AI assistant for technical interview–style responses."
 readme = "README.md"
 requires-python = ">=3.7"
@@ -41,3 +41,6 @@ voxai = "voxai.cli:main"
 [tool.setuptools.packages.find]
 include = ["voxai*"]
 exclude = ["assets*"]
+
+[tool.setuptools]
+include-package-data = true
