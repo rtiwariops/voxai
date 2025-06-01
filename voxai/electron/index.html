@@ -24,30 +24,73 @@
     let recording = false;
     const startBtn = document.getElementById('startBtn');
     const stopBtn  = document.getElementById('stopBtn');
-
+    const answerEl = document.getElementById('answer');
+    const transcriptEl = document.getElementById('transcript');
+  
+    // State for streaming bullets
+    let sentenceBuffer = "";     // holds partial sentence
+    let ul;
+  
+    // Button handlers
     startBtn.onclick = () => {
-      recording = true; update();
+      recording = true; updateButtons();
       ipcRenderer.send('to-python','START');
     };
     stopBtn.onclick = () => {
-      recording = false; update();
+      recording = false; updateButtons();
       ipcRenderer.send('to-python','STOP');
     };
-    function askAI(){
-      document.getElementById('answer').textContent='';
+    window.askAI = () => {
+      // clear old UI
+      answerEl.innerHTML = "";
+      sentenceBuffer = "";
+      // create container for bullets
+      ul = document.createElement('ul');
+      answerEl.appendChild(ul);
       ipcRenderer.send('to-python','ASK::');
-    }
-    function update(){
+    };
+  
+    function updateButtons(){
       startBtn.classList.toggle('active', recording);
       stopBtn.classList.toggle('active', !recording);
     }
-
-    ipcRenderer.on('from-python',(_,raw)=>{
-      const [kind,payload] = raw.split('::').map(s=>s.trim());
-      if(kind==='TRANSCRIBED') document.getElementById('transcript').textContent=payload;
-      if(kind==='CHUNK' && payload!=='[END]') document.getElementById('answer').textContent+=payload;
+  
+    // As tokens come in, split off complete sentences into <li>
+    ipcRenderer.on('from-python', (_, raw) => {
+      const [kind, payload] = raw.split('::');
+      if (kind === 'TRANSCRIBED') {
+        transcriptEl.textContent = payload;
+      }
+      else if (kind === 'CHUNK') {
+        if (payload === '[END]') {
+          // Flush any trailing text
+          if (sentenceBuffer.trim()) {
+            const li = document.createElement('li');
+            li.textContent = sentenceBuffer.trim();
+            ul.appendChild(li);
+          }
+        } else {
+          // Append new chunk, then extract finished sentences
+          sentenceBuffer += payload;
+          // Split on sentence endings (". " or "\n")
+          const parts = sentenceBuffer.split(/([.?!]\s+)/);
+          // parts: [ "First sentence", ". ", "Second sentence", ". ", "incomplete..." ]
+          // reassemble
+          let incomplete = parts.pop();
+          for (let i = 0; i < parts.length; i += 2) {
+            const sentence = (parts[i] + parts[i+1]).trim();
+            const li = document.createElement('li');
+            li.textContent = sentence;
+            ul.appendChild(li);
+          }
+          sentenceBuffer = incomplete;
+        }
+      }
     });
-    update();
+  
+    updateButtons();
   </script>
+  
+  
 </body>
 </html>
