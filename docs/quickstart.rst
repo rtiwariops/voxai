@@ -55,7 +55,17 @@ Install & Run
       GENAI_API_KEY=sk-…
       GENAI_MODEL=gemini-1.5-flash
 
-3. Launch the app:
+3. (Optional) **Customize the System Prompt**  
+   By default, VoxAI uses a built-in generic, professional prompt. To override it, create a file named ``system_prompt.txt`` in the **current working directory** (the folder from which you run the command). For example:
+
+   ::
+
+     ~/projects/my_voxai/
+     ├── .env
+     ├── system_prompt.txt    ← Your custom prompt
+     └── run_voxai.py         ← Or just “voxai” if installed globally
+
+4. Launch the app:
 
    .. code-block:: bash
 
