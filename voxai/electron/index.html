@@ -26,11 +26,11 @@
     const stopBtn  = document.getElementById('stopBtn');
     const answerEl = document.getElementById('answer');
     const transcriptEl = document.getElementById('transcript');
-  
+
     // State for streaming bullets
     let sentenceBuffer = "";     // holds partial sentence
     let ul;
-  
+
     // Button handlers
     startBtn.onclick = () => {
       recording = true; updateButtons();
@@ -49,12 +49,12 @@
       answerEl.appendChild(ul);
       ipcRenderer.send('to-python','ASK::');
     };
-  
+
     function updateButtons(){
       startBtn.classList.toggle('active', recording);
       stopBtn.classList.toggle('active', !recording);
     }
-  
+
     // As tokens come in, split off complete sentences into <li>
     ipcRenderer.on('from-python', (_, raw) => {
       const [kind, payload] = raw.split('::');
@@ -87,10 +87,10 @@
         }
       }
     });
-  
+
     updateButtons();
   </script>
-  
-  
+
+
 </body>
 </html>
