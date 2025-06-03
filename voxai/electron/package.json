@@ -1,7 +1,12 @@
 {
-  "name": "voxai-ui",
-  "version": "0.1.5",
+  "name": "voxai-electron",
+  "version": "1.0.0",
+  "description": "VoxAI Electron wrapper",
   "main": "main.js",
-  "scripts": { "start": "electron ." },
-  "devDependencies": { "electron": "^30.0.0" }
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^26.0.0"
+  }
 }

@@ -4,4 +4,3 @@ include .env.example
 recursive-include backend *.py
 prune assets
 prune electron
-

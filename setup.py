@@ -7,7 +7,7 @@ long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="voxai",
-    version="0.1.32",
+    version="0.1.45",
     description="Voice-driven AI assistant for real-time transcription and Gemini integration.",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -42,6 +42,7 @@ setup(
     },
     classifiers=[
         "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
         "Intended Audience :: Developers",
