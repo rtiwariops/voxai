@@ -4,6 +4,7 @@ import os
 import sys
 import threading
 from pathlib import Path
+import logging
 
 import numpy as np
 import sounddevice as sd
@@ -15,33 +16,39 @@ import google.generativeai as genai
 #  CONFIGURATION & STARTUP
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Print the path to confirm we’re running the intended file
-print(f"from-python:STATUS:: Running core.py from {__file__}", flush=True)
+# Configure logging to prefix every message with "from-python:" and send to stdout
+logging.basicConfig(
+    level=logging.INFO,
+    format="from-python:%(message)s",
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
 
-# Load environment variables (for GENAI_API_KEY / GENAI_MODEL)
+logger.info(f"STATUS:: Running core.py from {__file__}")
+
+# Load environment variables
 load_dotenv()
 API_KEY = os.getenv("GENAI_API_KEY")
 MODEL   = os.getenv("GENAI_MODEL")
 
 if not API_KEY:
-    print("from-python:CHUNK::[ERROR] Missing GENAI_API_KEY", flush=True)
-    print("from-python:CHUNK::[END]", flush=True)
+    logger.error("CHUNK::[ERROR] Missing GENAI_API_KEY")
+    logger.error("CHUNK::[END]")
     sys.exit(1)
 
 if not MODEL:
-    print("from-python:CHUNK::[ERROR] Missing GENAI_MODEL", flush=True)
-    print("from-python:CHUNK::[END]", flush=True)
+    logger.error("CHUNK::[ERROR] Missing GENAI_MODEL")
+    logger.error("CHUNK::[END]")
     sys.exit(1)
 
-# Initialize the Google Generative AI client
+# Initialize Generative AI client
 genai.configure(api_key=API_KEY)
-
 try:
     chat = genai.GenerativeModel(MODEL).start_chat()
-    print(f"from-python:STATUS:: Started chat with model '{MODEL}'", flush=True)
+    logger.info(f"STATUS:: Started chat with model '{MODEL}'")
 except Exception as e:
-    print(f"from-python:CHUNK::[ERROR] Could not start chat: {e}", flush=True)
-    print("from-python:CHUNK::[END]", flush=True)
+    logger.error(f"CHUNK::[ERROR] Could not start chat: {e}")
+    logger.error("CHUNK::[END]")
     sys.exit(1)
 
 # Whisper ASR initialization
@@ -50,40 +57,46 @@ SR = 16000  # sample rate
 CH = 1      # channels
 BS = 4000   # blocksize
 
-# Try to pick an input device containing “blackhole”; otherwise fallback to default
+# Choose an input device containing "blackhole"; otherwise default
 try:
-    DEV = next(i for i, d in enumerate(sd.query_devices()) if "blackhole" in d["name"].lower())
-    print(f"from-python:STATUS:: Using device index {DEV} for audio capture", flush=True)
+    DEV = next(
+        i for i, d in enumerate(sd.query_devices())
+        if "blackhole" in d["name"].lower()
+    )
+    logger.info(f"STATUS:: Using device index {DEV} for audio capture")
 except StopIteration:
     DEV = None
-    print("from-python:STATUS:: No 'blackhole' device found; using default input", flush=True)
+    logger.info("STATUS:: No 'blackhole' device found; using default input")
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  LOAD SYSTEM PROMPT (CWD → fallback)
 # ──────────────────────────────────────────────────────────────────────────────
 
-# 1. First check for 'system_prompt.txt' in the CURRENT WORKING DIRECTORY
 cwd_prompt = Path(os.getcwd()) / "system_prompt.txt"
-
 if cwd_prompt.exists():
     try:
         with open(cwd_prompt, "r", encoding="utf-8") as f:
             SYSTEM_PROMPT = f.read().strip()
-            print(f"from-python:STATUS:: Loaded system prompt from CWD: {cwd_prompt}", flush=True)
+            logger.info(f"STATUS:: Loaded system prompt from CWD: {cwd_prompt}")
     except Exception as e:
         SYSTEM_PROMPT = ""
-        print(f"from-python:STATUS:: Failed to read {cwd_prompt}: {e}", flush=True)
+        logger.info(f"STATUS:: Failed to read {cwd_prompt}: {e}")
 else:
-    # 2. No local file → use a built-in fallback
     SYSTEM_PROMPT = (
-        "You are an experienced Principal/Chief Engineer or VP, leading technology teams across multi-cloud environments (AWS, Azure, GCP). "
-        "Your responsibilities include architecting scalable, reliable systems using container orchestration, serverless functions, "
-        "big data processing, ML/AI platforms, observability tools, and Infrastructure-as-Code. You guide engineers, foster collaborative culture, "
-        "drive strategic decisions, and advocate best practices in security, performance, and operational excellence. "
-        "When responding, maintain a professional, technical tone, offer clear guidance on architecture and leadership practices, "
-        "and demonstrate broad knowledge of cloud services, DevOps methodologies, and effective team behaviors."
+        "You are a highly seasoned technology leader and expert in AI, cloud, "
+        "backend, frontend, and data warehousing. You lead large, cross-functional "
+        "teams, architecting scalable, secure solutions across AWS, Azure, and GCP. "
+        "Your domain includes:\n"
+        "- Generative AI, LLMs, and ML/AI platforms\n"
+        "- Cloud-native microservices, container orchestration, and serverless\n"
+        "- Backend frameworks, APIs, and database design (SQL/NoSQL/data warehouses)\n"
+        "- Frontend architectures, modern UI frameworks, and performance optimization\n"
+        "- Data pipelines, ETL, real-time streaming, and analytics\n"
+        "- Infrastructure as code, CI/CD, observability, and security best practices\n\n"
+        "When responding, keep answers short and to the point, simple and professional, "
+        "and focus on practical, actionable guidance."
     )
-    print("from-python:STATUS:: Using built-in fallback prompt", flush=True)
+    logger.info("STATUS:: Using built-in fallback prompt")
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  STATE VARIABLES
@@ -99,7 +112,7 @@ last_txt = ""    # holds the most recent transcription
 
 def audio_cb(indata, frames, time, status):
     if status:
-        print(f"from-python:STATUS:: Audio warning: {status}", flush=True)
+        logger.info(f"STATUS:: Audio warning: {status}")
     if recording:
         chunks.append(indata.copy())
 
@@ -109,7 +122,7 @@ def start_listening():
         return
     chunks = []
     recording = True
-    print("from-python:STATUS:: Recording Started", flush=True)
+    logger.info("STATUS:: Recording Started")
 
     def rec_thread():
         if DEV is not None:
@@ -127,7 +140,6 @@ def start_listening():
                 blocksize=BS,
                 callback=audio_cb
             )
-
         with stream:
             while recording:
                 sd.sleep(100)
@@ -137,11 +149,11 @@ def start_listening():
 def stop_and_transcribe():
     global recording, last_txt
     recording = False
-    print("from-python:STATUS:: Recording Stopped", flush=True)
+    logger.info("STATUS:: Recording Stopped")
 
     if not chunks:
         last_txt = ""
-        print("from-python:TRANSCRIBED::", flush=True)
+        logger.info("TRANSCRIBED::")
         return
 
     samples = np.concatenate(chunks, axis=0)[:, 0].astype(np.float32)
@@ -150,9 +162,9 @@ def stop_and_transcribe():
         last_txt = " ".join(s.text.strip() for s in segs).strip()
     except Exception as e:
         last_txt = ""
-        print(f"from-python:CHUNK::[ERROR] Whisper transcription failed: {e}", flush=True)
+        logger.error(f"CHUNK::[ERROR] Whisper transcription failed: {e}")
 
-    print(f"from-python:TRANSCRIBED::{last_txt}", flush=True)
+    logger.info(f"TRANSCRIBED::{last_txt}")
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  ASK AI (combine SYSTEM_PROMPT + last_txt)
@@ -161,31 +173,29 @@ def stop_and_transcribe():
 def ask_ai():
     global last_txt
 
-    # 1) Proof-of-life: show we entered ask_ai()
-    print("from-python:STATUS:: ENTERED ask_ai()", flush=True)
+    logger.info("STATUS:: ENTERED ask_ai()")
 
     if not last_txt.strip():
-        # If no transcript, notify and exit
-        print("from-python:CHUNK::[ERROR] No transcript to send to AI.", flush=True)
-        print("from-python:CHUNK::[END]", flush=True)
+        logger.error("CHUNK::[ERROR] No transcript to send to AI.")
+        logger.error("CHUNK::[END]")
         return
 
-    # 2) Build the combined prompt
     combined_prompt = SYSTEM_PROMPT + "\n\nUser Transcript: " + last_txt
-    print(f"from-python:STATUS:: ask_ai() invoked; combined_prompt starts with: '{combined_prompt[:60]}...'", flush=True)
+    logger.info(
+        f"STATUS:: ask_ai() invoked; combined_prompt starts with: "
+        f"'{combined_prompt[:60]}...'"
+    )
 
-    # 3) Attempt streaming call
     try:
         iterator = chat.send_message(combined_prompt, stream=True)
     except TypeError as e:
-        print(f"from-python:STATUS:: Streaming not supported ({e}); falling back to non-streaming", flush=True)
+        logger.info(f"STATUS:: Streaming not supported ({e}); falling back to non-streaming")
         iterator = None
     except Exception as e:
-        print(f"from-python:CHUNK::[ERROR] AI call failed at start: {e}", flush=True)
-        print("from-python:CHUNK::[END]", flush=True)
+        logger.error(f"CHUNK::[ERROR] AI call failed at start: {e}")
+        logger.error("CHUNK::[END]")
         return
 
-    # 4) If streaming is available, use it
     if iterator is not None:
         any_chunk = False
         try:
@@ -193,36 +203,35 @@ def ask_ai():
                 text = getattr(part, "text", None) or ""
                 if text:
                     any_chunk = True
-                    print(f"from-python:CHUNK::{text}", flush=True)
+                    logger.info(f"CHUNK::{text}")
         except Exception as e:
-            print(f"from-python:CHUNK::[ERROR] Streaming exception: {e}", flush=True)
+            logger.error(f"CHUNK::[ERROR] Streaming exception: {e}")
         finally:
             if not any_chunk:
-                print("from-python:CHUNK::[WARN] Streaming returned zero chunks.", flush=True)
-            print("from-python:CHUNK::[END]", flush=True)
+                logger.info("CHUNK::[WARN] Streaming returned zero chunks.")
+            logger.info("CHUNK::[END]")
     else:
-        # 5) Fallback to non-streaming call
         try:
             resp = chat.send_message(combined_prompt)  # non-stream
             text = getattr(resp, "text", "")
             if text:
-                print(f"from-python:CHUNK::{text}", flush=True)
+                logger.info(f"CHUNK::{text}")
             else:
-                print("from-python:CHUNK::[WARN] Non-streaming returned empty text.", flush=True)
+                logger.info("CHUNK::[WARN] Non-streaming returned empty text.")
         except Exception as e:
-            print(f"from-python:CHUNK::[ERROR] Non-streaming call failed: {e}", flush=True)
+            logger.error(f"CHUNK::[ERROR] Non-streaming call failed: {e}")
         finally:
-            print("from-python:CHUNK::[END]", flush=True)
+            logger.info("CHUNK::[END]")
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  MAIN LOOP WITH RAW LINE LOGGING
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main_loop():
-    print("from-python:STATUS:: voxai.core ready", flush=True)
+    logger.info("STATUS:: voxai.core ready")
     for line in sys.stdin:
         raw = line.rstrip("\n")
-        print(f"from-python:STATUS:: main_loop got raw line → '{raw}'", flush=True)
+        logger.info(f"STATUS:: main_loop got raw line → '{raw}'")
         cmd = raw.strip()
 
         if cmd == "START":
@@ -230,10 +239,10 @@ def main_loop():
         elif cmd == "STOP":
             stop_and_transcribe()
         elif cmd.upper().startswith("ASK"):
-            print(f"from-python:STATUS:: main_loop recognized ASK command: '{cmd}'", flush=True)
+            logger.info(f"STATUS:: main_loop recognized ASK command: '{cmd}'")
             ask_ai()
         else:
-            print(f"from-python:STATUS:: Unknown command → '{cmd}'", flush=True)
+            logger.info(f"STATUS:: Unknown command → '{cmd}'")
 
 if __name__ == "__main__":
     main_loop()
