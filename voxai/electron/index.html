@@ -17,6 +17,7 @@
       border-radius: 4px;
       background: #444;
       color: #ccc;
+      cursor: pointer;
     }
     button:disabled {
       background: #333;
@@ -32,6 +33,13 @@
       padding: 1rem;
       margin-top: 1rem;
       border-radius: 6px;
+    }
+    .card h3 {
+      margin: 0 0 0.5rem 0;
+    }
+    #answer p {
+      margin: 0;
+      line-height: 1.5;
     }
   </style>
 </head>
@@ -54,8 +62,8 @@
     const { ipcRenderer } = require('electron');
 
     let recording = false;
-    let ul = null;               // Will hold the UL for streamed chunks
-    let awaitingAIResponse = false; // Flag to know if we're currently waiting for AI
+    let paragraph = null;
+    let awaitingResponse = false;
 
     const startBtn     = document.getElementById('startBtn');
     const stopBtn      = document.getElementById('stopBtn');
@@ -63,126 +71,76 @@
     const answerEl     = document.getElementById('answer');
     const transcriptEl = document.getElementById('transcript');
 
-    /** Toggle the green “active” styling on Start/Stop. */
     function updateButtons() {
       startBtn.classList.toggle('active', recording);
       stopBtn.classList.toggle('active', !recording);
     }
 
-    /** Called when user clicks “Start” */
     startBtn.onclick = () => {
+      if (recording) return;
       recording = true;
       updateButtons();
       ipcRenderer.send('to-python', 'START');
-      console.log('[Renderer] Sent to Python → "START"');
     };
 
-    /** Called when user clicks “Stop” */
     stopBtn.onclick = () => {
-      if (!recording) return;  // guard against double‐click
+      if (!recording) return;
       recording = false;
       updateButtons();
       ipcRenderer.send('to-python', 'STOP');
-      console.log('[Renderer] Sent to Python → "STOP"');
     };
 
-    /**
-     * Called when user clicks “Ask AI”.
-     * We clear any old answer, create a fresh <ul>, then send “ASK::” to Python.
-     * We disable “Ask AI” until we see the final `CHUNK::[END]`.
-     */
-    window.askAI = () => {
-      if (awaitingAIResponse) {
-        console.log('[Renderer] Already waiting for AI response, ignoring duplicate click.');
-        return;
-      }
-
-      console.log('[Renderer] askAI() called');
-      // Clear previous answer
+    function askAI() {
+      if (awaitingResponse) return;
       answerEl.innerHTML = '';
-      ul = document.createElement('ul');
-      answerEl.appendChild(ul);
-
-      // Disable the Ask AI button while we wait for the response
-      awaitingAIResponse = true;
+      paragraph = document.createElement('p');
+      answerEl.appendChild(paragraph);
+      awaitingResponse = true;
       askBtn.disabled = true;
-
       ipcRenderer.send('to-python', 'ASK::');
-      console.log('[Renderer] Sent to Python → "ASK::"');
-    };
+    }
 
-    /**
-     * Listen for messages from Python.
-     *  • “TRANSCRIBED::…” → update transcript & enable Ask AI if non‐empty.
-     *  • “CHUNK::…”      → append a list item for each partial text.
-     *  • “CHUNK::[END]”  → AI response finished → re‐enable Ask AI (if transcript still exists).
-     *  • “STATUS::…”     → optional logging.
-     *  • anything else   → warn.
-     */
     ipcRenderer.on('from-python', (_, raw) => {
       try {
-        console.log('[Renderer] from-python →', raw);
-
-        // 1) TRANSCRIBED::payload
         if (raw.startsWith('TRANSCRIBED::')) {
-          const payload = raw.slice('TRANSCRIBED::'.length);
+          const payload = raw.slice(13);
           transcriptEl.textContent = payload;
-
-          // Enable “Ask AI” if there is any text to send
           if (payload.trim()) {
             askBtn.disabled = false;
-            awaitingAIResponse = false;
+            awaitingResponse = false;
           }
           return;
         }
 
-        // 2) CHUNK::payload
         if (raw.startsWith('CHUNK::')) {
-          const payload = raw.slice('CHUNK::'.length);
-
-          // If Python signals end, re‐enable the Ask AI button (if transcript still exists)
+          const payload = raw.slice(7);
           if (payload === '[END]') {
-            awaitingAIResponse = false;
+            awaitingResponse = false;
             if (transcriptEl.textContent.trim()) {
               askBtn.disabled = false;
             }
             return;
           }
-
-          // If there’s no UL (i.e. askAI() wasn’t called correctly), skip
-          if (!ul) {
-            console.warn('[Renderer] CHUNK arrived but <ul> is undefined. Skipping.');
-            return;
-          }
-
-          // Append each chunk as a new <li>
-          const li = document.createElement('li');
-          li.textContent = payload;
-          ul.appendChild(li);
+          if (!paragraph) return;
+          paragraph.textContent += (paragraph.textContent ? ' ' : '') + payload;
           return;
         }
 
-        // 3) STATUS::payload
         if (raw.startsWith('STATUS::')) {
-          const payload = raw.slice('STATUS::'.length);
-          console.log('[Renderer] STATUS →', payload);
+          // ignore status messages
           return;
         }
 
-        // 4) Unexpected format
-        console.warn('[Renderer] Unexpected message format:', raw);
+        // ignore other messages
       }
-      catch (err) {
-        console.error('[Renderer] Exception in from-python handler:', err);
-        // In case of any internal error, make sure Ask AI is not stuck disabled
-        awaitingAIResponse = false;
+      catch {
+        awaitingResponse = false;
         if (transcriptEl.textContent.trim()) {
           askBtn.disabled = false;
         }
       }
     });
 
-    // Initialize Start/Stop styling
     updateButtons();
   </script>
 </body>
