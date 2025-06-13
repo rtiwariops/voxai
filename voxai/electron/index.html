@@ -29,6 +29,10 @@
       border-radius: 0.5rem;
     }
 
+    #intro {
+      margin-bottom: 1rem;
+    }
+
     #answerList {
       list-style-type: disc;
       margin-left: 1.5rem;
@@ -36,6 +40,10 @@
     }
     #answerList li + li {
       margin-top: 0.5rem;
+    }
+    #answerList strong {
+      display: inline-block;
+      min-width: 8rem;
     }
   </style>
 </head>
@@ -51,26 +59,27 @@
   </div>
   <div class="card">
     <h3>Answer</h3>
-    <ul id="answerList">
-      <li>Waiting for input…</li>
-    </ul>
+    <p id="intro">Waiting for input…</p>
+    <ul id="answerList"></ul>
   </div>
 
   <script>
     const { ipcRenderer } = require('electron');
-    const startBtn     = document.getElementById('startBtn');
-    const stopBtn      = document.getElementById('stopBtn');
-    const askBtn       = document.getElementById('askBtn');
-    const transcriptEl = document.getElementById('transcript');
-    const answerList   = document.getElementById('answerList');
+    const startBtn   = document.getElementById('startBtn');
+    const stopBtn    = document.getElementById('stopBtn');
+    const askBtn     = document.getElementById('askBtn');
+    const transcript = document.getElementById('transcript');
+    const intro      = document.getElementById('intro');
+    const list       = document.getElementById('answerList');
 
     let recording = false;
-    let awaitingResponse = false;
+    let awaiting = false;
+    let buffer = '';
 
     function updateButtons() {
       startBtn.classList.toggle('active', recording);
-      stopBtn.classList.toggle('active', !recording && !awaitingResponse);
-      askBtn.disabled = awaitingResponse || !transcriptEl.textContent.trim();
+      stopBtn.classList.toggle('active', !recording && !awaiting);
+      askBtn.disabled = awaiting || !transcript.textContent.trim();
     }
 
     startBtn.addEventListener('click', () => {
@@ -88,40 +97,54 @@
     });
 
     askBtn.addEventListener('click', () => {
-      if (awaitingResponse) return;
-      answerList.innerHTML = '';
-      awaitingResponse = true;
+      if (awaiting) return;
+      intro.textContent = '';
+      list.innerHTML = '';
+      buffer = '';
+      awaiting = true;
       updateButtons();
       ipcRenderer.send('to-python', 'ASK::');
     });
 
     ipcRenderer.on('from-python', (_, raw) => {
       if (raw.startsWith('TRANSCRIBED::')) {
-        transcriptEl.textContent = raw.slice(13);
+        transcript.textContent = raw.slice(13);
         updateButtons();
         return;
       }
-      if (raw.startsWith('CHUNK::')) {
-        const chunk = raw.slice(7);
-        if (chunk === '[END]') {
-          awaitingResponse = false;
-          updateButtons();
-          return;
-        }
-        // split on newlines or periods for quick bullets
-        const lines = chunk
-          .split(/\r?\n|(?<=[.?!])\s+/)
-          .map(s => s.trim())
-          .filter(s => s);
-        lines.forEach(text => {
-          // avoid duplicating the last bullet
-          const last = answerList.lastElementChild?.textContent;
-          if (text !== last) {
+      if (!raw.startsWith('CHUNK::')) return;
+      const chunk = raw.slice(7);
+      if (chunk === '[END]') {
+        // full response in buffer
+        const parts = buffer.trim()
+          .split(/\n\s*\n/)             // split on blank lines
+          .map(p => p.trim())
+          .filter(p => p);
+        // first part → intro
+        intro.textContent = parts.shift() || '';
+        // remaining lines as bullets
+        parts
+          .join('\n')                  // reassemble
+          .split(/\r?\n/)              // split on newlines
+          .map(line => line.trim())
+          .filter(line => line)
+          .forEach(line => {
+            // parse "**Heading:** description"
+            const m = line.match(/^\*{0,2}(.+?)\*{0,2}[:\-]\s*(.+)$/);
+            const heading = m ? m[1] : '';
+            const desc    = m ? m[2] : line;
             const li = document.createElement('li');
-            li.textContent = text.replace(/^[-*]\s*/, '');
-            answerList.appendChild(li);
-          }
-        });
+            if (heading) {
+              li.innerHTML = `<strong>${heading}</strong>: ${desc}`;
+            } else {
+              li.textContent = desc;
+            }
+            list.appendChild(li);
+          });
+        awaiting = false;
+        updateButtons();
+      } else {
+        buffer += chunk;
       }
     });
 
