@@ -64,91 +64,101 @@
   </div>
 
   <script>
-    const { ipcRenderer } = require('electron');
-    const startBtn   = document.getElementById('startBtn');
-    const stopBtn    = document.getElementById('stopBtn');
-    const askBtn     = document.getElementById('askBtn');
-    const transcript = document.getElementById('transcript');
-    const intro      = document.getElementById('intro');
-    const list       = document.getElementById('answerList');
+  const { ipcRenderer } = require('electron');
+  const startBtn   = document.getElementById('startBtn');
+  const stopBtn    = document.getElementById('stopBtn');
+  const askBtn     = document.getElementById('askBtn');
+  const transcript = document.getElementById('transcript');
+  const list       = document.getElementById('answerList');
 
-    let recording = false;
-    let awaiting = false;
-    let buffer = '';
+  let recording   = false;
+  let awaiting    = false;
+  let buffer      = '';
+  let processedUp = 0;
+  let lastSent    = '';
 
-    function updateButtons() {
-      startBtn.classList.toggle('active', recording);
-      stopBtn.classList.toggle('active', !recording && !awaiting);
-      askBtn.disabled = awaiting || !transcript.textContent.trim();
-    }
+  function updateButtons() {
+    startBtn.classList.toggle('active', recording);
+    stopBtn.classList.toggle('active', !recording && !awaiting);
+    askBtn.disabled = awaiting || !transcript.textContent.trim();
+  }
 
-    startBtn.addEventListener('click', () => {
-      if (recording) return;
-      recording = true;
-      ipcRenderer.send('to-python', 'START');
-      updateButtons();
-    });
-
-    stopBtn.addEventListener('click', () => {
-      if (!recording) return;
-      recording = false;
-      ipcRenderer.send('to-python', 'STOP');
-      updateButtons();
-    });
-
-    askBtn.addEventListener('click', () => {
-      if (awaiting) return;
-      intro.textContent = '';
-      list.innerHTML = '';
-      buffer = '';
-      awaiting = true;
-      updateButtons();
-      ipcRenderer.send('to-python', 'ASK::');
-    });
-
-    ipcRenderer.on('from-python', (_, raw) => {
-      if (raw.startsWith('TRANSCRIBED::')) {
-        transcript.textContent = raw.slice(13);
-        updateButtons();
-        return;
-      }
-      if (!raw.startsWith('CHUNK::')) return;
-      const chunk = raw.slice(7);
-      if (chunk === '[END]') {
-        // full response in buffer
-        const parts = buffer.trim()
-          .split(/\n\s*\n/)             // split on blank lines
-          .map(p => p.trim())
-          .filter(p => p);
-        // first part → intro
-        intro.textContent = parts.shift() || '';
-        // remaining lines as bullets
-        parts
-          .join('\n')                  // reassemble
-          .split(/\r?\n/)              // split on newlines
-          .map(line => line.trim())
-          .filter(line => line)
-          .forEach(line => {
-            // parse "**Heading:** description"
-            const m = line.match(/^\*{0,2}(.+?)\*{0,2}[:\-]\s*(.+)$/);
-            const heading = m ? m[1] : '';
-            const desc    = m ? m[2] : line;
-            const li = document.createElement('li');
-            if (heading) {
-              li.innerHTML = `<strong>${heading}</strong>: ${desc}`;
-            } else {
-              li.textContent = desc;
-            }
-            list.appendChild(li);
-          });
-        awaiting = false;
-        updateButtons();
-      } else {
-        buffer += chunk;
-      }
-    });
-
+  startBtn.addEventListener('click', () => {
+    if (recording) return;
+    recording = true;
+    ipcRenderer.send('to-python', 'START');
     updateButtons();
-  </script>
+  });
+
+  stopBtn.addEventListener('click', () => {
+    if (!recording) return;
+    recording = false;
+    ipcRenderer.send('to-python', 'STOP');
+    updateButtons();
+  });
+
+  askBtn.addEventListener('click', () => {
+    if (awaiting) return;
+    list.innerHTML = '';
+    buffer = '';
+    processedUp = 0;
+    lastSent = '';
+    awaiting = true;
+    updateButtons();
+    ipcRenderer.send('to-python', 'ASK::');
+  });
+
+  ipcRenderer.on('from-python', (_, raw) => {
+    if (raw.startsWith('TRANSCRIBED::')) {
+      transcript.textContent = raw.slice(13);
+      updateButtons();
+      return;
+    }
+    if (!raw.startsWith('CHUNK::')) return;
+    const chunk = raw.slice(7);
+    if (chunk === '[END]') {
+      // flush any leftover text
+      const leftover = buffer.slice(processedUp).trim();
+      if (leftover && leftover !== lastSent) {
+        appendSentence(leftover);
+      }
+      awaiting = false;
+      buffer = '';
+      processedUp = 0;
+      updateButtons();
+      return;
+    }
+    buffer += chunk;
+    // regex to capture complete sentences
+    const regex = /(.+?[\.!?])(\s|$)/g;
+    let match;
+    while ((match = regex.exec(buffer))) {
+      const sentence = match[1].trim();
+      const endIdx   = match.index + match[1].length;
+      if (endIdx > processedUp) {
+        processedUp = endIdx;
+        if (sentence && sentence !== lastSent) {
+          appendSentence(sentence);
+          lastSent = sentence;
+        }
+      }
+    }
+  });
+
+  function appendSentence(text) {
+    const li = document.createElement('li');
+    // heading:description?
+    const parts = text.match(/^(.+?):\s*(.+)$/);
+    if (parts) {
+      li.innerHTML = `<strong>${parts[1]}</strong>: ${parts[2]}`;
+    } else {
+      li.textContent = text;
+    }
+    list.appendChild(li);
+  }
+
+  updateButtons();
+</script>
+
 </body>
 </html>
