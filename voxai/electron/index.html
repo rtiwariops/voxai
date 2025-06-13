@@ -59,10 +59,9 @@
   const transcript = document.getElementById('transcript');
   const answerEl   = document.getElementById('answer');
 
-  let recording   = false;
-  let awaiting    = false;
-  let buffer      = '';
-  let firstDone   = false;
+  let recording = false;
+  let awaiting  = false;
+  let buffer    = '';
 
   function updateButtons() {
     startBtn.classList.toggle('active', recording);
@@ -86,9 +85,8 @@
 
   askBtn.addEventListener('click', () => {
     if (awaiting) return;
-    buffer    = '';
-    firstDone = false;
-    answerEl.textContent = '';
+    buffer = '';
+    answerEl.textContent = '';   // clear out old answer
     awaiting  = true;
     updateButtons();
     ipcRenderer.send('to-python', 'ASK::');
@@ -101,28 +99,23 @@
       return;
     }
     if (!raw.startsWith('CHUNK::')) return;
+
     const chunk = raw.slice(7);
     if (chunk === '[END]') {
+      // Done; leave buffer intact as the full answer
       awaiting = false;
       updateButtons();
       return;
     }
-    if (firstDone) {
-      // Ignore all further chunks once we've got our definition
-      return;
-    }
+
+    // Append new text and stream it
     buffer += chunk;
-    // Check if we now have a full sentence
-    const match = buffer.match(/(.+?\.)\s/);
-    if (match) {
-      // Display the first sentence only
-      answerEl.textContent = match[1].trim();
-      firstDone = true;
-    }
+    answerEl.textContent = buffer;
   });
 
   updateButtons();
 </script>
+
 
 </body>
 </html>
