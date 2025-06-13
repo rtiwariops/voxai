@@ -14,40 +14,29 @@
       margin-right: 1rem;
       padding: 0.5rem 1rem;
       border: none;
-      border-radius: 4px;
+      border-radius: 0.25rem;
       background: #444;
-      color: #ccc;
+      color: #fff;
       cursor: pointer;
     }
-    button:disabled {
-      background: #333;
-      color: #666;
-      cursor: not-allowed;
-    }
-    .active {
-      background: #28a745;
-      color: #fff;
-    }
+    button.active { background: #0a84ff; }
+    button:disabled { opacity: 0.5; cursor: default; }
+
     .card {
-      background: #1a1a1a;
+      background: #1e1e1e;
       padding: 1rem;
       margin-top: 1rem;
-      border-radius: 6px;
+      border-radius: 0.5rem;
     }
-    .card h3 {
-      margin: 0 0 0.5rem 0;
+
+    /* new list styling */
+    #answerList {
+      list-style-type: disc;
+      margin-left: 1.5rem;
+      padding: 0;
     }
-    #answer p {
-      margin: 0;
-      line-height: 1.5;
-    }
-    #answer ul {
-      margin: 0;
-      padding-left: 1.2rem;
-      line-height: 1.5;
-    }
-    #answer li {
-      margin-bottom: 0.5rem;
+    #answerList li + li {
+      margin-top: 0.5rem;
     }
   </style>
 </head>
@@ -63,47 +52,35 @@
   </div>
   <div class="card">
     <h3>Answer</h3>
-    <div id="answer">Waiting...</div>
+    <!-- switched from <div id="answer"> to a UL -->
+    <ul id="answerList">
+      <li>Waiting for input…</li>
+    </ul>
   </div>
 
   <script>
     const { ipcRenderer } = require('electron');
-
-    let recording = false;
-    let paragraph = null;
-    let awaitingResponse = false;
-
     const startBtn     = document.getElementById('startBtn');
     const stopBtn      = document.getElementById('stopBtn');
     const askBtn       = document.getElementById('askBtn');
-    const answerEl     = document.getElementById('answer');
     const transcriptEl = document.getElementById('transcript');
+    const answerList   = document.getElementById('answerList');
+
+    let recording = false;
+    let awaitingResponse = false;
+    let answerText = '';
 
     function updateButtons() {
       startBtn.classList.toggle('active', recording);
-      stopBtn.classList.toggle('active', !recording);
+      stopBtn.classList.toggle('active', !recording && awaitingResponse === false);
+      askBtn.disabled = awaitingResponse || !transcriptEl.textContent.trim();
     }
-
-    startBtn.onclick = () => {
-      if (recording) return;
-      recording = true;
-      updateButtons();
-      ipcRenderer.send('to-python', 'START');
-    };
-
-    stopBtn.onclick = () => {
-      if (!recording) return;
-      recording = false;
-      updateButtons();
-      ipcRenderer.send('to-python', 'STOP');
-    };
 
     function askAI() {
       if (awaitingResponse) return;
-      answerEl.innerHTML = '';
-      paragraph = document.createElement('div');  // use a div for rich HTML
-      paragraph.style.whiteSpace = 'pre-wrap';    // preserve line breaks
-      answerEl.appendChild(paragraph);
+      // clear previous bullets
+      answerList.innerHTML = '';
+      answerText = '';
       awaitingResponse = true;
       askBtn.disabled = true;
       ipcRenderer.send('to-python', 'ASK::');
@@ -111,42 +88,49 @@
 
     ipcRenderer.on('from-python', (_, raw) => {
       try {
+        // transcription updates
         if (raw.startsWith('TRANSCRIBED::')) {
           const payload = raw.slice(13);
           transcriptEl.textContent = payload;
-          if (payload.trim()) {
-            askBtn.disabled = false;
-            awaitingResponse = false;
-          }
+          updateButtons();
           return;
         }
 
+        // streaming AI chunks
         if (raw.startsWith('CHUNK::')) {
           const payload = raw.slice(7);
+
+          // end-of-stream marker
           if (payload === '[END]') {
             awaitingResponse = false;
-            if (transcriptEl.textContent.trim()) {
-              askBtn.disabled = false;
-            }
+
+            // split combined text into non-empty lines
+            const lines = answerText
+              .split(/\r?\n/)                // break on newlines
+              .map(l => l.trim())            // trim whitespace
+              .filter(l => l.length > 0);    // drop empty
+
+            // render each line as a bullet
+            lines.forEach(line => {
+              const li = document.createElement('li');
+              // remove any leading "-" or "*" markers
+              li.textContent = line.replace(/^[-*]\s*/, '');
+              answerList.appendChild(li);
+            });
+
+            updateButtons();
             return;
           }
-          if (!paragraph) return;
-          paragraph.innerHTML += (paragraph.innerHTML ? ' ' : '') + payload;
+
+          // accumulate the chunk
+          answerText += payload;
           return;
         }
 
-        if (raw.startsWith('STATUS::')) {
-          // ignore status messages
-          return;
-        }
-
-        // ignore other messages
-      }
-      catch {
+        // ignore other messages like STATUS, etc.
+      } catch (e) {
         awaitingResponse = false;
-        if (transcriptEl.textContent.trim()) {
-          askBtn.disabled = false;
-        }
+        updateButtons();
       }
     });
 
