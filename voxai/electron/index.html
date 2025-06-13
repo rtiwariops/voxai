@@ -101,7 +101,8 @@
     function askAI() {
       if (awaitingResponse) return;
       answerEl.innerHTML = '';
-      paragraph = document.createElement('p');
+      paragraph = document.createElement('div');  // use a div for rich HTML
+      paragraph.style.whiteSpace = 'pre-wrap';    // preserve line breaks
       answerEl.appendChild(paragraph);
       awaitingResponse = true;
       askBtn.disabled = true;
