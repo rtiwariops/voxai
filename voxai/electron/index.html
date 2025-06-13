@@ -29,21 +29,9 @@
       border-radius: 0.5rem;
     }
 
-    #intro {
-      margin-bottom: 1rem;
-    }
-
-    #answerList {
-      list-style-type: disc;
-      margin-left: 1.5rem;
-      padding: 0;
-    }
-    #answerList li + li {
-      margin-top: 0.5rem;
-    }
-    #answerList strong {
-      display: inline-block;
-      min-width: 8rem;
+    #answer {
+      line-height: 1.5;
+      white-space: pre-wrap;
     }
   </style>
 </head>
@@ -59,106 +47,71 @@
   </div>
   <div class="card">
     <h3>Answer</h3>
-    <p id="intro">Waiting for input…</p>
-    <ul id="answerList"></ul>
+    <p id="answer">Waiting for input…</p>
   </div>
 
   <script>
-  const { ipcRenderer } = require('electron');
-  const startBtn   = document.getElementById('startBtn');
-  const stopBtn    = document.getElementById('stopBtn');
-  const askBtn     = document.getElementById('askBtn');
-  const transcript = document.getElementById('transcript');
-  const list       = document.getElementById('answerList');
+    const { ipcRenderer } = require('electron');
+    const startBtn  = document.getElementById('startBtn');
+    const stopBtn   = document.getElementById('stopBtn');
+    const askBtn    = document.getElementById('askBtn');
+    const transcript= document.getElementById('transcript');
+    const answerEl  = document.getElementById('answer');
 
-  let recording   = false;
-  let awaiting    = false;
-  let buffer      = '';
-  let processedUp = 0;
-  let lastSent    = '';
+    let recording = false;
+    let awaiting  = false;
+    let buffer    = '';
 
-  function updateButtons() {
-    startBtn.classList.toggle('active', recording);
-    stopBtn.classList.toggle('active', !recording && !awaiting);
-    askBtn.disabled = awaiting || !transcript.textContent.trim();
-  }
-
-  startBtn.addEventListener('click', () => {
-    if (recording) return;
-    recording = true;
-    ipcRenderer.send('to-python', 'START');
-    updateButtons();
-  });
-
-  stopBtn.addEventListener('click', () => {
-    if (!recording) return;
-    recording = false;
-    ipcRenderer.send('to-python', 'STOP');
-    updateButtons();
-  });
-
-  askBtn.addEventListener('click', () => {
-    if (awaiting) return;
-    list.innerHTML = '';
-    buffer = '';
-    processedUp = 0;
-    lastSent = '';
-    awaiting = true;
-    updateButtons();
-    ipcRenderer.send('to-python', 'ASK::');
-  });
-
-  ipcRenderer.on('from-python', (_, raw) => {
-    if (raw.startsWith('TRANSCRIBED::')) {
-      transcript.textContent = raw.slice(13);
-      updateButtons();
-      return;
+    function updateButtons() {
+      startBtn.classList.toggle('active', recording);
+      stopBtn.classList.toggle('active', !recording && !awaiting);
+      askBtn.disabled = awaiting || !transcript.textContent.trim();
     }
-    if (!raw.startsWith('CHUNK::')) return;
-    const chunk = raw.slice(7);
-    if (chunk === '[END]') {
-      // flush any leftover text
-      const leftover = buffer.slice(processedUp).trim();
-      if (leftover && leftover !== lastSent) {
-        appendSentence(leftover);
-      }
-      awaiting = false;
+
+    startBtn.addEventListener('click', () => {
+      if (recording) return;
+      recording = true;
+      ipcRenderer.send('to-python', 'START');
+      updateButtons();
+    });
+
+    stopBtn.addEventListener('click', () => {
+      if (!recording) return;
+      recording = false;
+      ipcRenderer.send('to-python', 'STOP');
+      updateButtons();
+    });
+
+    askBtn.addEventListener('click', () => {
+      if (awaiting) return;
       buffer = '';
-      processedUp = 0;
+      answerEl.textContent = '';
+      awaiting = true;
       updateButtons();
-      return;
-    }
-    buffer += chunk;
-    // regex to capture complete sentences
-    const regex = /(.+?[\.!?])(\s|$)/g;
-    let match;
-    while ((match = regex.exec(buffer))) {
-      const sentence = match[1].trim();
-      const endIdx   = match.index + match[1].length;
-      if (endIdx > processedUp) {
-        processedUp = endIdx;
-        if (sentence && sentence !== lastSent) {
-          appendSentence(sentence);
-          lastSent = sentence;
-        }
+      ipcRenderer.send('to-python', 'ASK::');
+    });
+
+    ipcRenderer.on('from-python', (_, raw) => {
+      if (raw.startsWith('TRANSCRIBED::')) {
+        transcript.textContent = raw.slice(13);
+        updateButtons();
+        return;
       }
-    }
-  });
+      if (!raw.startsWith('CHUNK::')) return;
+      const chunk = raw.slice(7);
+      if (chunk === '[END]') {
+        // show only definition: take everything up to the first period.
+        const text = buffer.trim();
+        const endIdx = text.indexOf('.') + 1 || text.length;
+        answerEl.textContent = text.slice(0, endIdx).trim();
+        awaiting = false;
+        updateButtons();
+      } else {
+        buffer += chunk;
+      }
+    });
 
-  function appendSentence(text) {
-    const li = document.createElement('li');
-    // heading:description?
-    const parts = text.match(/^(.+?):\s*(.+)$/);
-    if (parts) {
-      li.innerHTML = `<strong>${parts[1]}</strong>: ${parts[2]}`;
-    } else {
-      li.textContent = text;
-    }
-    list.appendChild(li);
-  }
-
-  updateButtons();
-</script>
-
+    updateButtons();
+  </script>
 </body>
 </html>
