@@ -29,7 +29,6 @@
       border-radius: 0.5rem;
     }
 
-    /* list styling */
     #answerList {
       list-style-type: disc;
       margin-left: 1.5rem;
@@ -67,7 +66,7 @@
 
     let recording = false;
     let awaitingResponse = false;
-    let answerText = '';
+    let buffer = '';  // holds incomplete sentence text
 
     function updateButtons() {
       startBtn.classList.toggle('active', recording);
@@ -92,7 +91,7 @@
     askBtn.addEventListener('click', () => {
       if (awaitingResponse) return;
       answerList.innerHTML = '';
-      answerText = '';
+      buffer = '';
       awaitingResponse = true;
       updateButtons();
       ipcRenderer.send('to-python', 'ASK::');
@@ -100,27 +99,37 @@
 
     ipcRenderer.on('from-python', (_, raw) => {
       if (raw.startsWith('TRANSCRIBED::')) {
-        const text = raw.slice(13);
-        transcriptEl.textContent = text;
+        transcriptEl.textContent = raw.slice(13);
         updateButtons();
         return;
       }
       if (raw.startsWith('CHUNK::')) {
-        const payload = raw.slice(7);
-        if (payload === '[END]') {
-          awaitingResponse = false;
-          const lines = answerText
-            .split(/\r?\n/)
-            .map(l => l.trim())
-            .filter(l => l);
-          lines.forEach(line => {
+        const chunk = raw.slice(7);
+        if (chunk === '[END]') {
+          // flush any remaining buffer as one bullet
+          const leftover = buffer.trim();
+          if (leftover) {
             const li = document.createElement('li');
-            li.textContent = line.replace(/^[-*]\s*/, '');
+            li.textContent = leftover.replace(/^[-*]\s*/, '');
             answerList.appendChild(li);
-          });
+          }
+          awaitingResponse = false;
           updateButtons();
         } else {
-          answerText += payload;
+          buffer += chunk;
+          // extract full sentences or lines
+          const regex = /(.+?[\.!\?])(\s|$)|([^\r\n]+)\r?\n/g;
+          let match;
+          while ((match = regex.exec(buffer))) {
+            const sentence = (match[1] || match[3] || '').trim();
+            if (sentence) {
+              const li = document.createElement('li');
+              li.textContent = sentence.replace(/^[-*]\s*/, '');
+              answerList.appendChild(li);
+            }
+          }
+          // remove processed part from buffer
+          buffer = buffer.slice(regex.lastIndex);
         }
       }
     });
