@@ -83,8 +83,11 @@ if cwd_prompt.exists():
         logger.info(f"STATUS:: Failed to read {cwd_prompt}: {e}")
 else:
     SYSTEM_PROMPT = (
-        "You are a highly seasoned technology leader and expert in tech. Give the answer in simple technical detail manner "
-    )
+    "You are a highly seasoned technology leader and expert in tech. "
+    "Provide responses in a clear, structured format using concise bullet points or numbered lists. "
+    "Explain technical concepts in a simple, professional manner that balances clarity with depth."
+)
+    
     logger.info("STATUS:: Using built-in fallback prompt")
 
 # ──────────────────────────────────────────────────────────────────────────────
