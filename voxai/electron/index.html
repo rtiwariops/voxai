@@ -29,7 +29,7 @@
       border-radius: 0.5rem;
     }
 
-    /* new list styling */
+    /* list styling */
     #answerList {
       list-style-type: disc;
       margin-left: 1.5rem;
@@ -44,7 +44,7 @@
   <h1>🎧 VoxAI</h1>
   <button id="startBtn">Start</button>
   <button id="stopBtn">Stop</button>
-  <button id="askBtn" onclick="askAI()" disabled>Ask AI</button>
+  <button id="askBtn" disabled>Ask AI</button>
 
   <div class="card">
     <h3>Transcript</h3>
@@ -52,7 +52,6 @@
   </div>
   <div class="card">
     <h3>Answer</h3>
-    <!-- switched from <div id="answer"> to a UL -->
     <ul id="answerList">
       <li>Waiting for input…</li>
     </ul>
@@ -76,61 +75,59 @@
       askBtn.disabled = awaitingResponse || !transcriptEl.textContent.trim();
     }
 
-    function askAI() {
+    // **Restore your click handlers:**
+    startBtn.addEventListener('click', () => {
+      if (!recording) {
+        ipcRenderer.send('to-python', 'START::');
+        recording = true;
+        updateButtons();
+      }
+    });
+
+    stopBtn.addEventListener('click', () => {
+      if (recording) {
+        ipcRenderer.send('to-python', 'STOP::');
+        recording = false;
+        updateButtons();
+      }
+    });
+
+    askBtn.addEventListener('click', () => {
       if (awaitingResponse) return;
-      // clear previous bullets
       answerList.innerHTML = '';
       answerText = '';
       awaitingResponse = true;
-      askBtn.disabled = true;
+      updateButtons();
       ipcRenderer.send('to-python', 'ASK::');
-    }
+    });
 
     ipcRenderer.on('from-python', (_, raw) => {
-      try {
-        // transcription updates
-        if (raw.startsWith('TRANSCRIBED::')) {
-          const payload = raw.slice(13);
-          transcriptEl.textContent = payload;
-          updateButtons();
-          return;
-        }
-
-        // streaming AI chunks
-        if (raw.startsWith('CHUNK::')) {
-          const payload = raw.slice(7);
-
-          // end-of-stream marker
-          if (payload === '[END]') {
-            awaitingResponse = false;
-
-            // split combined text into non-empty lines
-            const lines = answerText
-              .split(/\r?\n/)                // break on newlines
-              .map(l => l.trim())            // trim whitespace
-              .filter(l => l.length > 0);    // drop empty
-
-            // render each line as a bullet
-            lines.forEach(line => {
-              const li = document.createElement('li');
-              // remove any leading "-" or "*" markers
-              li.textContent = line.replace(/^[-*]\s*/, '');
-              answerList.appendChild(li);
-            });
-
-            updateButtons();
-            return;
-          }
-
-          // accumulate the chunk
-          answerText += payload;
-          return;
-        }
-
-        // ignore other messages like STATUS, etc.
-      } catch (e) {
-        awaitingResponse = false;
+      // handle transcript updates
+      if (raw.startsWith('TRANSCRIBED::')) {
+        transcriptEl.textContent = raw.slice(13);
         updateButtons();
+        return;
+      }
+
+      // handle streaming AI chunks
+      if (raw.startsWith('CHUNK::')) {
+        const payload = raw.slice(7);
+        if (payload === '[END]') {
+          awaitingResponse = false;
+          const lines = answerText
+            .split(/\r?\n/)
+            .map(l => l.trim())
+            .filter(l => l.length > 0);
+          lines.forEach(line => {
+            const li = document.createElement('li');
+            li.textContent = line.replace(/^[-*]\s*/, '');
+            answerList.appendChild(li);
+          });
+          updateButtons();
+        } else {
+          answerText += payload;
+        }
+        return;
       }
     });
 
