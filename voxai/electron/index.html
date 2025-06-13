@@ -66,7 +66,6 @@
 
     let recording = false;
     let awaitingResponse = false;
-    let buffer = '';  // holds incomplete sentence text
 
     function updateButtons() {
       startBtn.classList.toggle('active', recording);
@@ -91,7 +90,6 @@
     askBtn.addEventListener('click', () => {
       if (awaitingResponse) return;
       answerList.innerHTML = '';
-      buffer = '';
       awaitingResponse = true;
       updateButtons();
       ipcRenderer.send('to-python', 'ASK::');
@@ -106,31 +104,24 @@
       if (raw.startsWith('CHUNK::')) {
         const chunk = raw.slice(7);
         if (chunk === '[END]') {
-          // flush any remaining buffer as one bullet
-          const leftover = buffer.trim();
-          if (leftover) {
-            const li = document.createElement('li');
-            li.textContent = leftover.replace(/^[-*]\s*/, '');
-            answerList.appendChild(li);
-          }
           awaitingResponse = false;
           updateButtons();
-        } else {
-          buffer += chunk;
-          // extract full sentences or lines
-          const regex = /(.+?[\.!\?])(\s|$)|([^\r\n]+)\r?\n/g;
-          let match;
-          while ((match = regex.exec(buffer))) {
-            const sentence = (match[1] || match[3] || '').trim();
-            if (sentence) {
-              const li = document.createElement('li');
-              li.textContent = sentence.replace(/^[-*]\s*/, '');
-              answerList.appendChild(li);
-            }
-          }
-          // remove processed part from buffer
-          buffer = buffer.slice(regex.lastIndex);
+          return;
         }
+        // split on newlines or periods for quick bullets
+        const lines = chunk
+          .split(/\r?\n|(?<=[.?!])\s+/)
+          .map(s => s.trim())
+          .filter(s => s);
+        lines.forEach(text => {
+          // avoid duplicating the last bullet
+          const last = answerList.lastElementChild?.textContent;
+          if (text !== last) {
+            const li = document.createElement('li');
+            li.textContent = text.replace(/^[-*]\s*/, '');
+            answerList.appendChild(li);
+          }
+        });
       }
     });
 
