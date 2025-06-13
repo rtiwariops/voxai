@@ -71,25 +71,22 @@
 
     function updateButtons() {
       startBtn.classList.toggle('active', recording);
-      stopBtn.classList.toggle('active', !recording && awaitingResponse === false);
+      stopBtn.classList.toggle('active', !recording && !awaitingResponse);
       askBtn.disabled = awaitingResponse || !transcriptEl.textContent.trim();
     }
 
-    // **Restore your click handlers:**
     startBtn.addEventListener('click', () => {
-      if (!recording) {
-        ipcRenderer.send('to-python', 'START::');
-        recording = true;
-        updateButtons();
-      }
+      if (recording) return;
+      recording = true;
+      ipcRenderer.send('to-python', 'START');
+      updateButtons();
     });
 
     stopBtn.addEventListener('click', () => {
-      if (recording) {
-        ipcRenderer.send('to-python', 'STOP::');
-        recording = false;
-        updateButtons();
-      }
+      if (!recording) return;
+      recording = false;
+      ipcRenderer.send('to-python', 'STOP');
+      updateButtons();
     });
 
     askBtn.addEventListener('click', () => {
@@ -102,14 +99,12 @@
     });
 
     ipcRenderer.on('from-python', (_, raw) => {
-      // handle transcript updates
       if (raw.startsWith('TRANSCRIBED::')) {
-        transcriptEl.textContent = raw.slice(13);
+        const text = raw.slice(13);
+        transcriptEl.textContent = text;
         updateButtons();
         return;
       }
-
-      // handle streaming AI chunks
       if (raw.startsWith('CHUNK::')) {
         const payload = raw.slice(7);
         if (payload === '[END]') {
@@ -117,7 +112,7 @@
           const lines = answerText
             .split(/\r?\n/)
             .map(l => l.trim())
-            .filter(l => l.length > 0);
+            .filter(l => l);
           lines.forEach(line => {
             const li = document.createElement('li');
             li.textContent = line.replace(/^[-*]\s*/, '');
@@ -127,7 +122,6 @@
         } else {
           answerText += payload;
         }
-        return;
       }
     });
 
