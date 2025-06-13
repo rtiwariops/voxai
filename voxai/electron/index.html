@@ -32,6 +32,7 @@
     #answer {
       line-height: 1.5;
       white-space: pre-wrap;
+      min-height: 3em;
     }
   </style>
 </head>
@@ -52,11 +53,11 @@
 
   <script>
     const { ipcRenderer } = require('electron');
-    const startBtn  = document.getElementById('startBtn');
-    const stopBtn   = document.getElementById('stopBtn');
-    const askBtn    = document.getElementById('askBtn');
-    const transcript= document.getElementById('transcript');
-    const answerEl  = document.getElementById('answer');
+    const startBtn   = document.getElementById('startBtn');
+    const stopBtn    = document.getElementById('stopBtn');
+    const askBtn     = document.getElementById('askBtn');
+    const transcript = document.getElementById('transcript');
+    const answerEl   = document.getElementById('answer');
 
     let recording = false;
     let awaiting  = false;
@@ -98,16 +99,21 @@
         return;
       }
       if (!raw.startsWith('CHUNK::')) return;
+
       const chunk = raw.slice(7);
       if (chunk === '[END]') {
-        // show only definition: take everything up to the first period.
-        const text = buffer.trim();
-        const endIdx = text.indexOf('.') + 1 || text.length;
-        answerEl.textContent = text.slice(0, endIdx).trim();
+        // once done, keep only the first sentence
+        const full = buffer.trim();
+        const idx  = full.indexOf('.');
+        answerEl.textContent = idx > 0
+          ? full.slice(0, idx + 1).trim()
+          : full;
         awaiting = false;
         updateButtons();
       } else {
         buffer += chunk;
+        // stream as it comes
+        answerEl.textContent = buffer;
       }
     });
 
