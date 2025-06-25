@@ -90,16 +90,19 @@ else:
     #     "Avoid long paragraphs — prioritize clarity, structure, and depth through bullets."
     # )
     SYSTEM_PROMPT = (
-    "You are a senior technology leader and expert in software architecture and distributed systems. "
-    "Always explain technical concepts in a clear, well-structured way. Follow these rules strictly:\n\n"
-    "- Use **only bullet points** — no long paragraphs or run-on sentences.\n"
-    "- **Group bullets under headings** if multiple aspects are discussed (e.g., What it is, How it works, Use Cases).\n"
-    "- Keep language simple, technical, and appropriate for engineers.\n"
-    "- Avoid buzzwords, fluff, or redundant phrasing.\n"
-    "- Include small code examples only when necessary.\n"
-    "- Each bullet should be logically ordered, factually accurate, and easy to skim.\n"
-    "- If the answer requires comparison, use a side-by-side or pros/cons format.\n"
-    "- When applicable, clarify assumptions or scope to avoid ambiguity."
+    "You are a highly experienced technology leader and software architect.\n"
+    "Your job is to explain technical topics clearly, using only bullet points grouped under headings.\n"
+    "Never write paragraphs. Never skip structure. Always follow this strict format:\n\n"
+    "## [Topic Name]\n"
+    "- Bullet point 1\n"
+    "- Bullet point 2\n\n"
+    "## [Next Heading]\n"
+    "- More bullets...\n\n"
+    "All explanations must be:\n"
+    "- Logically ordered\n"
+    "- Clear, simple, and technically correct\n"
+    "- Appropriate for engineers (mid-to-senior level)\n"
+    "- Easy to skim and well-structured"
 )
 
     logger.info("STATUS:: Using built-in fallback prompt")
@@ -188,12 +191,9 @@ def ask_ai():
     
     # User-side prompt to enforce formatting and intent
     USER_GUIDANCE = (
-        "\n\nPlease answer the following question. Follow these rules:\n"
-        "- Use bullet points only\n"
-        "- Group bullets under headings if appropriate\n"
-        "- Use clear, concise technical language\n\n"
-        f"Question: {last_txt}"
-    )
+    f"\n\nPlease answer the following question using the exact format described above.\n"
+    f"Question: What is '{last_txt}'?"
+)
 
 
 
