@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
 # ──────────────────────────────────────────────────────────────────────────────
-#  core.py – Voice-to-Gemini chat loop with live token streaming
+#  core.py – Voice‑to‑Gemini chat loop with non‑blocking live streaming
 # ──────────────────────────────────────────────────────────────────────────────
+
+"""
+Key changes vs previous version
+────────────────────────────────
+1. **ask_ai() now streams in a background thread** so the stdin loop never blocks.  
+2. **Each token chunk is emitted on its own line** using the original logger – this
+   matches the UI’s "one‑line‑per‑chunk" contract so nothing appears to freeze.  
+3. Introduced a short “thinking” line when the call starts, letting the UI show
+   a spinner immediately.
+"""
 
 import os
 import sys
@@ -16,21 +26,20 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  CONFIGURATION & STARTUP
+#  CONFIG & LOGGING
 # ──────────────────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
     level=logging.INFO,
     format="from-python:%(message)s",
-    stream=sys.stdout
+    stream=sys.stdout,
 )
 logger = logging.getLogger(__name__)
 logger.info(f"STATUS:: Running core.py from {__file__}")
 
-# Load env vars
 load_dotenv()
 API_KEY = os.getenv("GENAI_API_KEY")
-MODEL   = os.getenv("GENAI_MODEL", "gemini-1.5-pro-latest")  # sensible default
+MODEL   = os.getenv("GENAI_MODEL", "gemini-1.5-pro-latest")
 
 if not API_KEY:
     logger.error("CHUNK::[ERROR] Missing GENAI_API_KEY")
@@ -43,13 +52,11 @@ if not API_KEY:
 
 SYSTEM_PROMPT = """
 You are TechMentor, a senior software architect.
-• Reply **only** with Markdown headings (`## Heading`) followed by concise bullet points.
-• Never write full prose paragraphs.
-• Keep each bullet ≤ 20 words, use plain technical English.
-• Use fenced code blocks for code snippets (≤ 10 lines).
+• Reply **only** with Markdown headings (## Heading) followed by concise bullet points.
+• No paragraphs; each bullet ≤ 20 words.
+• Use fenced code blocks for code (≤ 10 lines).
 """.strip()
 
-# If a `system_prompt.txt` exists in CWD, override:
 custom_prompt = Path("system_prompt.txt")
 if custom_prompt.exists():
     try:
@@ -66,7 +73,7 @@ genai.configure(api_key=API_KEY)
 try:
     model = genai.GenerativeModel(
         model_name=MODEL,
-        system_instruction=SYSTEM_PROMPT
+        system_instruction=SYSTEM_PROMPT,
     )
     chat = model.start_chat()
     logger.info(f"STATUS:: Started chat with model '{MODEL}'")
@@ -80,29 +87,27 @@ except Exception as e:
 # ──────────────────────────────────────────────────────────────────────────────
 
 whisper = WhisperModel("base", compute_type="int8")
-SR = 16000  # sample rate
-CH = 1      # channels
-BS = 4000   # block size (samples)
+SR = 16000
+CH = 1
+BS = 4000
 
-# Auto-select BlackHole or default input
 try:
-    DEV = next(i for i, d in enumerate(sd.query_devices())
-               if "blackhole" in d["name"].lower())
+    DEV = next(i for i, d in enumerate(sd.query_devices()) if "blackhole" in d["name"].lower())
     logger.info(f"STATUS:: Using device index {DEV} for audio capture")
 except StopIteration:
     DEV = None
     logger.info("STATUS:: No 'blackhole' device found; using default input")
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  STATE
+#  STATE VARS
 # ──────────────────────────────────────────────────────────────────────────────
 
-chunks      = []   # list of recorded audio blocks
+chunks      = []
 recording   = False
-last_txt    = ""   # most recent ASR text
+last_txt    = ""
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  AUDIO RECORD / TRANSCRIBE
+#  AUDIO HELPERS
 # ──────────────────────────────────────────────────────────────────────────────
 
 def audio_cb(indata, frames, time, status):
@@ -150,8 +155,31 @@ def stop_and_transcribe():
     logger.info(f"TRANSCRIBED::{last_txt}")
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  GEMINI CALL + LIVE STREAM
+#  AI THREAD – non‑blocking streaming
 # ──────────────────────────────────────────────────────────────────────────────
+
+def _ai_stream_thread(prompt: str):
+    """Runs in background so UI never freezes."""
+    # Emit early notification so UI can show spinner
+    logger.info("CHUNK::[THINKING]")
+
+    try:
+        iterator = chat.send_message(prompt, stream=True)
+    except Exception as e:
+        logger.error(f"CHUNK::[ERROR] AI call failed: {e}")
+        logger.error("CHUNK::[END]")
+        return
+
+    try:
+        for part in iterator:
+            text = getattr(part, "text", "")
+            if text:
+                logger.info(f"CHUNK::{text}")  # newline after each chunk
+    except Exception as e:
+        logger.error(f"CHUNK::[ERROR] Streaming exception: {e}")
+    finally:
+        logger.info("CHUNK::[END]")
+
 
 def ask_ai():
     if not last_txt.strip():
@@ -159,35 +187,10 @@ def ask_ai():
         logger.error("CHUNK::[END]")
         return
 
-    try:
-        stream = chat.send_message(last_txt, stream=True)  # iterator of chunks
-    except Exception as e:
-        logger.error(f"CHUNK::[ERROR] AI call failed: {e}")
-        logger.error("CHUNK::[END]")
-        return
-
-    # Emit answer in a single teletype line
-    sys.stdout.write("CHUNK::")
-    sys.stdout.flush()
-
-    any_chunk = False
-    try:
-        for part in stream:
-            text = getattr(part, "text", "")
-            if text:
-                any_chunk = True
-                sys.stdout.write(text)
-                sys.stdout.flush()
-    except Exception as e:
-        logger.error(f"CHUNK::[ERROR] Streaming exception: {e}")
-    finally:
-        if not any_chunk:
-            sys.stdout.write("[WARN] Streaming returned zero chunks.")
-        sys.stdout.write("\nCHUNK::[END]\n")
-        sys.stdout.flush()
+    threading.Thread(target=_ai_stream_thread, args=(last_txt,), daemon=True).start()
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  MAIN LOOP (stdin commands: START, STOP, ASK)
+#  COMMAND LOOP
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main_loop():
@@ -204,7 +207,7 @@ def main_loop():
         elif cmd.startswith("ASK"):
             ask_ai()
         else:
-            logger.info(f"STATUS:: Unknown command → '{raw}'")
+            logger.info(f"STATUS:: Unknown command → '{cmd}'")
 
 if __name__ == "__main__":
     main_loop()
