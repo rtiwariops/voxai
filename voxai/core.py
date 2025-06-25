@@ -118,26 +118,35 @@ def fetch_snippet(q):
 
 # ── GEMINI STREAM: **word‑by‑word** ───────────────────────────────────────────
 
-def _stream(prompt:str):
+def _stream(prompt: str):
+    """Stream Gemini output **word by word** while preserving spaces/newlines."""
     logger.info("CHUNK::[THINKING]")
     try:
-        it=chat.send_message(prompt,stream=True,generation_config={"temperature":0.4,"max_output_tokens":512})
+        it = chat.send_message(
+            prompt,
+            stream=True,
+            generation_config={"temperature": 0.4, "max_output_tokens": 512},
+        )
     except Exception as e:
-        logger.error(f"CHUNK::[ERROR] {e}"); logger.error("CHUNK::[END]"); return
-    word=""
+        logger.error(f"CHUNK::[ERROR] {e}")
+        logger.error("CHUNK::[END]")
+        return
+
+    word = ""
     try:
         for part in it:
-            txt=getattr(part,"text","")
+            txt = getattr(part, "text", "")
             for ch in txt:
                 if ch.isspace():
                     if word:
                         logger.info(f"CHUNK::{word}")
-                        word=""
-                    if ch=="\n":
-                        logger.info("CHUNK::\n")  # emit newline marker
+                        word = ""
+                    # preserve the exact whitespace
+                    logger.info(f"CHUNK::{ch}")  # space or newline
                 else:
-                    word+=ch
-        if word: logger.info(f"CHUNK::{word}")
+                    word += ch
+        if word:
+            logger.info(f"CHUNK::{word}")
     finally:
         logger.info("CHUNK::[END]")
 
