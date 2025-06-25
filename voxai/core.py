@@ -1,4 +1,7 @@
-# core.py
+#!/usr/bin/env python3
+# ──────────────────────────────────────────────────────────────────────────────
+#  core.py – Voice-to-Gemini chat loop with live token streaming
+# ──────────────────────────────────────────────────────────────────────────────
 
 import os
 import sys
@@ -16,107 +19,90 @@ import google.generativeai as genai
 #  CONFIGURATION & STARTUP
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Configure logging to prefix every message with "from-python:" and send to stdout
 logging.basicConfig(
     level=logging.INFO,
     format="from-python:%(message)s",
     stream=sys.stdout
 )
 logger = logging.getLogger(__name__)
-
 logger.info(f"STATUS:: Running core.py from {__file__}")
 
-# Load environment variables
+# Load env vars
 load_dotenv()
 API_KEY = os.getenv("GENAI_API_KEY")
-MODEL   = os.getenv("GENAI_MODEL")
+MODEL   = os.getenv("GENAI_MODEL", "gemini-1.5-pro-latest")  # sensible default
 
 if not API_KEY:
     logger.error("CHUNK::[ERROR] Missing GENAI_API_KEY")
     logger.error("CHUNK::[END]")
     sys.exit(1)
 
-if not MODEL:
-    logger.error("CHUNK::[ERROR] Missing GENAI_MODEL")
-    logger.error("CHUNK::[END]")
-    sys.exit(1)
+# ──────────────────────────────────────────────────────────────────────────────
+#  SYSTEM PROMPT
+# ──────────────────────────────────────────────────────────────────────────────
 
-# Initialize Generative AI client
+SYSTEM_PROMPT = """
+You are TechMentor, a senior software architect.
+• Reply **only** with Markdown headings (`## Heading`) followed by concise bullet points.
+• Never write full prose paragraphs.
+• Keep each bullet ≤ 20 words, use plain technical English.
+• Use fenced code blocks for code snippets (≤ 10 lines).
+""".strip()
+
+# If a `system_prompt.txt` exists in CWD, override:
+custom_prompt = Path("system_prompt.txt")
+if custom_prompt.exists():
+    try:
+        SYSTEM_PROMPT = custom_prompt.read_text(encoding="utf-8").strip()
+        logger.info(f"STATUS:: Loaded system prompt from {custom_prompt}")
+    except Exception as e:
+        logger.info(f"STATUS:: Failed to read {custom_prompt}: {e}")
+
+# ──────────────────────────────────────────────────────────────────────────────
+#  INITIALISE GEMINI CHAT
+# ──────────────────────────────────────────────────────────────────────────────
+
 genai.configure(api_key=API_KEY)
 try:
-    chat = genai.GenerativeModel(MODEL).start_chat()
+    model = genai.GenerativeModel(
+        model_name=MODEL,
+        system_instruction=SYSTEM_PROMPT
+    )
+    chat = model.start_chat()
     logger.info(f"STATUS:: Started chat with model '{MODEL}'")
 except Exception as e:
     logger.error(f"CHUNK::[ERROR] Could not start chat: {e}")
     logger.error("CHUNK::[END]")
     sys.exit(1)
 
-# Whisper ASR initialization
+# ──────────────────────────────────────────────────────────────────────────────
+#  WHISPER ASR SETUP
+# ──────────────────────────────────────────────────────────────────────────────
+
 whisper = WhisperModel("base", compute_type="int8")
 SR = 16000  # sample rate
 CH = 1      # channels
-BS = 4000   # blocksize
+BS = 4000   # block size (samples)
 
-# Choose an input device containing "blackhole"; otherwise default
+# Auto-select BlackHole or default input
 try:
-    DEV = next(
-        i for i, d in enumerate(sd.query_devices())
-        if "blackhole" in d["name"].lower()
-    )
+    DEV = next(i for i, d in enumerate(sd.query_devices())
+               if "blackhole" in d["name"].lower())
     logger.info(f"STATUS:: Using device index {DEV} for audio capture")
 except StopIteration:
     DEV = None
     logger.info("STATUS:: No 'blackhole' device found; using default input")
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  LOAD SYSTEM PROMPT (CWD → fallback)
+#  STATE
 # ──────────────────────────────────────────────────────────────────────────────
 
-cwd_prompt = Path(os.getcwd()) / "system_prompt.txt"
-if cwd_prompt.exists():
-    try:
-        with open(cwd_prompt, "r", encoding="utf-8") as f:
-            SYSTEM_PROMPT = f.read().strip()
-            logger.info(f"STATUS:: Loaded system prompt from CWD: {cwd_prompt}")
-    except Exception as e:
-        SYSTEM_PROMPT = ""
-        logger.info(f"STATUS:: Failed to read {cwd_prompt}: {e}")
-else:
-    # SYSTEM_PROMPT = (
-    #     "You are a highly seasoned technology leader and expert in software architecture and systems design. "
-    #     "Always respond using clear, concise bullet points. "
-    #     "Each point should be logically ordered and technically sound. "
-    #     "Use simple technical language appropriate for developers and engineers. "
-    #     "Avoid long paragraphs — prioritize clarity, structure, and depth through bullets."
-    # )
-    SYSTEM_PROMPT = (
-    "You are a highly experienced technology leader and software architect.\n"
-    "Your job is to explain technical topics clearly, using only bullet points grouped under headings.\n"
-    "Never write paragraphs. Never skip structure. Always follow this strict format:\n\n"
-    "## [Topic Name]\n"
-    "- Bullet point 1\n"
-    "- Bullet point 2\n\n"
-    "## [Next Heading]\n"
-    "- More bullets...\n\n"
-    "All explanations must be:\n"
-    "- Logically ordered\n"
-    "- Clear, simple, and technically correct\n"
-    "- Appropriate for engineers (mid-to-senior level)\n"
-    "- Easy to skim and well-structured"
-)
-
-    logger.info("STATUS:: Using built-in fallback prompt")
+chunks      = []   # list of recorded audio blocks
+recording   = False
+last_txt    = ""   # most recent ASR text
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  STATE VARIABLES
-# ──────────────────────────────────────────────────────────────────────────────
-
-chunks = []      # audio buffers
-recording = False
-last_txt = ""    # holds the most recent transcription
-
-# ──────────────────────────────────────────────────────────────────────────────
-#  AUDIO CALLBACK & RECORD/STOP
+#  AUDIO RECORD / TRANSCRIBE
 # ──────────────────────────────────────────────────────────────────────────────
 
 def audio_cb(indata, frames, time, status):
@@ -133,27 +119,15 @@ def start_listening():
     recording = True
     logger.info("STATUS:: Recording Started")
 
-    def rec_thread():
+    def _rec_thread():
+        stream_args = dict(samplerate=SR, channels=CH, blocksize=BS, callback=audio_cb)
         if DEV is not None:
-            stream = sd.InputStream(
-                device=DEV,
-                samplerate=SR,
-                channels=CH,
-                blocksize=BS,
-                callback=audio_cb
-            )
-        else:
-            stream = sd.InputStream(
-                samplerate=SR,
-                channels=CH,
-                blocksize=BS,
-                callback=audio_cb
-            )
-        with stream:
+            stream_args["device"] = DEV
+        with sd.InputStream(**stream_args):
             while recording:
                 sd.sleep(100)
 
-    threading.Thread(target=rec_thread, daemon=True).start()
+    threading.Thread(target=_rec_thread, daemon=True).start()
 
 def stop_and_transcribe():
     global recording, last_txt
@@ -176,72 +150,44 @@ def stop_and_transcribe():
     logger.info(f"TRANSCRIBED::{last_txt}")
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  ASK AI (combine SYSTEM_PROMPT + last_txt)
+#  GEMINI CALL + LIVE STREAM
 # ──────────────────────────────────────────────────────────────────────────────
 
 def ask_ai():
-    global last_txt
-
-    logger.info("STATUS:: ENTERED ask_ai()")
-
     if not last_txt.strip():
         logger.error("CHUNK::[ERROR] No transcript to send to AI.")
         logger.error("CHUNK::[END]")
         return
-    
-    # User-side prompt to enforce formatting and intent
-    USER_GUIDANCE = (
-    f"\n\nPlease answer the following question using the exact format described above.\n"
-    f"Question: What is '{last_txt}'?"
-)
-
-
-
-    combined_prompt = SYSTEM_PROMPT + USER_GUIDANCE
-    logger.info(
-        f"STATUS:: ask_ai() invoked; combined_prompt starts with: "
-        f"'{combined_prompt[:60]}...'"
-    )
 
     try:
-        iterator = chat.send_message(combined_prompt, stream=True)
-    except TypeError as e:
-        logger.info(f"STATUS:: Streaming not supported ({e}); falling back to non-streaming")
-        iterator = None
+        stream = chat.send_message(last_txt, stream=True)  # iterator of chunks
     except Exception as e:
-        logger.error(f"CHUNK::[ERROR] AI call failed at start: {e}")
+        logger.error(f"CHUNK::[ERROR] AI call failed: {e}")
         logger.error("CHUNK::[END]")
         return
 
-    if iterator is not None:
-        any_chunk = False
-        try:
-            for part in iterator:
-                text = getattr(part, "text", None) or ""
-                if text:
-                    any_chunk = True
-                    logger.info(f"CHUNK::{text}")
-        except Exception as e:
-            logger.error(f"CHUNK::[ERROR] Streaming exception: {e}")
-        finally:
-            if not any_chunk:
-                logger.info("CHUNK::[WARN] Streaming returned zero chunks.")
-            logger.info("CHUNK::[END]")
-    else:
-        try:
-            resp = chat.send_message(combined_prompt)  # non-stream
-            text = getattr(resp, "text", "")
+    # Emit answer in a single teletype line
+    sys.stdout.write("CHUNK::")
+    sys.stdout.flush()
+
+    any_chunk = False
+    try:
+        for part in stream:
+            text = getattr(part, "text", "")
             if text:
-                logger.info(f"CHUNK::{text}")
-            else:
-                logger.info("CHUNK::[WARN] Non-streaming returned empty text.")
-        except Exception as e:
-            logger.error(f"CHUNK::[ERROR] Non-streaming call failed: {e}")
-        finally:
-            logger.info("CHUNK::[END]")
+                any_chunk = True
+                sys.stdout.write(text)
+                sys.stdout.flush()
+    except Exception as e:
+        logger.error(f"CHUNK::[ERROR] Streaming exception: {e}")
+    finally:
+        if not any_chunk:
+            sys.stdout.write("[WARN] Streaming returned zero chunks.")
+        sys.stdout.write("\nCHUNK::[END]\n")
+        sys.stdout.flush()
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  MAIN LOOP WITH RAW LINE LOGGING
+#  MAIN LOOP (stdin commands: START, STOP, ASK)
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main_loop():
@@ -249,17 +195,16 @@ def main_loop():
     for line in sys.stdin:
         raw = line.rstrip("\n")
         logger.info(f"STATUS:: main_loop got raw line → '{raw}'")
-        cmd = raw.strip()
+        cmd = raw.strip().upper()
 
         if cmd == "START":
             start_listening()
         elif cmd == "STOP":
             stop_and_transcribe()
-        elif cmd.upper().startswith("ASK"):
-            logger.info(f"STATUS:: main_loop recognized ASK command: '{cmd}'")
+        elif cmd.startswith("ASK"):
             ask_ai()
         else:
-            logger.info(f"STATUS:: Unknown command → '{cmd}'")
+            logger.info(f"STATUS:: Unknown command → '{raw}'")
 
 if __name__ == "__main__":
     main_loop()
