@@ -4,18 +4,10 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 """
-What’s new vs last revision
-──────────────────────────
-1. **Interview‑style prompt** – answers come back as:
-
-   ## Topic
-   - **Question**: …
-   - **Answer**:
-     - …
-
-2. **Line‑safe streaming** – we buffer tokens and emit only *complete lines* so the UI
-   never shows half‑words or broken Markdown.  
-3. **Non‑blocking** – AI stream still runs on a background thread.
+Changes in this patch
+─────────────────────
+* Replaced **max_tokens** with **max_output_tokens** in `generation_config` to match
+  Gemini API field names and fix the runtime error.
 """
 
 import os
@@ -113,15 +105,18 @@ def audio_cb(indata, *_):
 
 def start_listening():
     global recording, chunks
-    if recording: return
+    if recording:
+        return
     chunks, recording = [], True
     logger.info("STATUS:: Recording Started")
 
     def _rec():
         kwargs = dict(samplerate=SR, channels=CH, blocksize=BS, callback=audio_cb)
-        if DEV is not None: kwargs["device"] = DEV
+        if DEV is not None:
+            kwargs["device"] = DEV
         with sd.InputStream(**kwargs):
-            while recording: sd.sleep(100)
+            while recording:
+                sd.sleep(100)
     threading.Thread(target=_rec, daemon=True).start()
 
 def stop_and_transcribe():
@@ -142,9 +137,13 @@ def stop_and_transcribe():
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _stream_to_logger(prompt: str):
-    logger.info("CHUNK::[THINKING]")  # spinner hook for UI
+    logger.info("CHUNK::[THINKING]")
     try:
-        iterator = chat.send_message(prompt, stream=True, generation_config={"temperature":0.4, "max_tokens":512})
+        iterator = chat.send_message(
+            prompt,
+            stream=True,
+            generation_config={"temperature": 0.4, "max_output_tokens": 512},
+        )
     except Exception as e:
         logger.error(f"CHUNK::[ERROR] AI call failed: {e}"); logger.error("CHUNK::[END]"); return
 
@@ -152,12 +151,14 @@ def _stream_to_logger(prompt: str):
     try:
         for part in iterator:
             text = getattr(part, "text", "")
-            if not text: continue
+            if not text:
+                continue
             buffer += text
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
-                if line: logger.info(f"CHUNK::{line}")
-        if buffer.strip():  # any trailing text without newline
+                if line:
+                    logger.info(f"CHUNK::{line}")
+        if buffer.strip():
             logger.info(f"CHUNK::{buffer.strip()}")
     except Exception as e:
         logger.error(f"CHUNK::[ERROR] Streaming exception: {e}")
