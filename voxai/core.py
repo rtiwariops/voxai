@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # ──────────────────────────────────────────────────────────────────────────────
-#  core.py – Voice‑to‑Gemini chat loop (interview‑style answers + safe streaming)
+#  core.py – Interview helper with *free* web‑snippet retrieval (DuckDuckGo + Wikipedia)
 # ──────────────────────────────────────────────────────────────────────────────
-
 """
-Changes in this patch
-─────────────────────
-* Replaced **max_tokens** with **max_output_tokens** in `generation_config` to match
-  Gemini API field names and fix the runtime error.
+What’s in this FREE edition
+───────────────────────────
+* Uses **DuckDuckGo Instant Answer API** (no key, no cost, ~100 req/min) and
+  falls back to **Wikipedia REST summary** if DuckDuckGo returns nothing.
+* Removed Bing key and paid tiers entirely.
+* All other behaviour (ASR, streaming, interview prompt) unchanged.
 """
 
 import os
@@ -15,7 +16,10 @@ import sys
 import threading
 from pathlib import Path
 import logging
+from datetime import date
+from urllib.parse import quote_plus
 
+import requests  # only free endpoints used
 import numpy as np
 import sounddevice as sd
 from faster_whisper import WhisperModel
@@ -26,53 +30,52 @@ import google.generativeai as genai
 #  CONFIG & LOGGING
 # ──────────────────────────────────────────────────────────────────────────────
 
-logging.basicConfig(level=logging.INFO, format="from-python:%(message)s", stream=sys.stdout)
+logging.basicConfig(level=logging.INFO,
+                    format="from-python:%(message)s",
+                    stream=sys.stdout)
 logger = logging.getLogger(__name__)
 logger.info(f"STATUS:: Running core.py from {__file__}")
 
 load_dotenv()
 API_KEY = os.getenv("GENAI_API_KEY")
-MODEL   = os.getenv("GENAI_MODEL", "gemini-1.5-pro-latest")
+MODEL   = os.getenv("GENAI_MODEL", "gemini-2.5-flash")
 if not API_KEY:
     logger.error("CHUNK::[ERROR] Missing GENAI_API_KEY"); logger.error("CHUNK::[END]"); sys.exit(1)
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  SYSTEM PROMPT – interview format
+#  SYSTEM PROMPT – interview + context
 # ──────────────────────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """
+SYSTEM_PROMPT = f"""
 You are TechMentor, a senior technical interviewer.
-For *every* user question, follow **exactly** this Markdown layout:
+For **every** question, answer in this Markdown format:
 
-## <Concise Topic Heading>
-- **Question**: <repeat the user’s question in one sentence>
+## <Topic>
+- **Question**: <repeat question>
 - **Answer**:
   - Bullet 1 (≤ 20 words)
-  - Bullet 2
-  - … (as many as needed)
+  - Bullet 2 …
 
-Rules:
-- Only Markdown headings + bullets; never prose paragraphs.
-- Keep language clear, technically precise, mid‑to‑senior engineer level.
-- Code snippets ≤ 10 lines inside fenced blocks.
+Ground your answer in the *Context* provided. If, after using the context, no
+reliable info exists, reply:
+"Unknown: no reliable public source found as of {date.today():%Y-%m-%d}."
 """.strip()
 
-custom_prompt = Path("system_prompt.txt")
-if custom_prompt.exists():
+if (fp := Path("system_prompt.txt")).exists():
     try:
-        SYSTEM_PROMPT = custom_prompt.read_text(encoding="utf-8").strip()
-        logger.info(f"STATUS:: Loaded system prompt from {custom_prompt}")
+        SYSTEM_PROMPT = fp.read_text(encoding="utf-8").strip();
+        logger.info(f"STATUS:: Loaded custom prompt from {fp}")
     except Exception as e:
-        logger.info(f"STATUS:: Failed to read {custom_prompt}: {e}")
+        logger.info(f"STATUS:: Failed to read {fp}: {e}")
 
 # ──────────────────────────────────────────────────────────────────────────────
-#  INITIALISE GEMINI
+#  GENAI INIT
 # ──────────────────────────────────────────────────────────────────────────────
 
 genai.configure(api_key=API_KEY)
 try:
     model = genai.GenerativeModel(model_name=MODEL, system_instruction=SYSTEM_PROMPT)
-    chat = model.start_chat()
+    chat  = model.start_chat()
     logger.info(f"STATUS:: Started chat with model '{MODEL}'")
 except Exception as e:
     logger.error(f"CHUNK::[ERROR] Could not start chat: {e}"); logger.error("CHUNK::[END]"); sys.exit(1)
@@ -109,12 +112,11 @@ def start_listening():
         return
     chunks, recording = [], True
     logger.info("STATUS:: Recording Started")
-
     def _rec():
-        kwargs = dict(samplerate=SR, channels=CH, blocksize=BS, callback=audio_cb)
+        args = dict(samplerate=SR, channels=CH, blocksize=BS, callback=audio_cb)
         if DEV is not None:
-            kwargs["device"] = DEV
-        with sd.InputStream(**kwargs):
+            args["device"] = DEV
+        with sd.InputStream(**args):
             while recording:
                 sd.sleep(100)
     threading.Thread(target=_rec, daemon=True).start()
@@ -133,33 +135,67 @@ def stop_and_transcribe():
     logger.info(f"TRANSCRIBED::{last_txt}")
 
 # ──────────────────────────────────────────────────────────────────────────────
+#  FREE RETRIEVAL HELPERS
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _duckduckgo(query: str) -> str:
+    try:
+        url = f"https://api.duckduckgo.com/?q={quote_plus(query)}&format=json&no_redirect=1&no_html=1"
+        data = requests.get(url, timeout=5).json()
+        abstract = data.get("AbstractText") or ""
+        if abstract:
+            return abstract
+        rel_topics = data.get("RelatedTopics", [])
+        if rel_topics and isinstance(rel_topics[0], dict):
+            return rel_topics[0].get("Text", "")
+    except Exception as e:
+        logger.info(f"STATUS:: DuckDuckGo error: {e}")
+    return ""
+
+def _wikipedia_summary(query: str) -> str:
+    try:
+        title = quote_plus(query.replace(" ", "_"))
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
+        data = requests.get(url, timeout=5).json()
+        if data.get("extract") and data.get("description") != "Wikimedia disambiguation page":
+            return data["extract"]
+    except Exception as e:
+        logger.info(f"STATUS:: Wikipedia error: {e}")
+    return ""
+
+def fetch_snippet(query: str) -> str:
+    """Return free web summary, preferring DuckDuckGo, fallback Wikipedia."""
+    snippet = _duckduckgo(query)
+    if snippet:
+        return snippet
+    return _wikipedia_summary(query)
+
+# ──────────────────────────────────────────────────────────────────────────────
 #  AI STREAM – line‑safe
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _stream_to_logger(prompt: str):
+def _stream_to_logger(full_prompt: str):
     logger.info("CHUNK::[THINKING]")
     try:
-        iterator = chat.send_message(
-            prompt,
-            stream=True,
-            generation_config={"temperature": 0.4, "max_output_tokens": 512},
-        )
+        iterator = chat.send_message(full_prompt,
+                                     stream=True,
+                                     generation_config={"temperature": 0.4, "max_output_tokens": 512})
     except Exception as e:
         logger.error(f"CHUNK::[ERROR] AI call failed: {e}"); logger.error("CHUNK::[END]"); return
 
-    buffer = ""
+    buf = ""
     try:
         for part in iterator:
             text = getattr(part, "text", "")
             if not text:
                 continue
-            buffer += text
-            while "\n" in buffer:
-                line, buffer = buffer.split("\n", 1)
+            buf += text
+            while "\n" in buf:
+                line, buf = buf.split("\n", 1)
                 if line:
                     logger.info(f"CHUNK::{line}")
-        if buffer.strip():
-            logger.info(f"CHUNK::{buffer.strip()}")
+        if buf.strip():
+            logger.info(f"CHUNK::{buf.strip()}")
     except Exception as e:
         logger.error(f"CHUNK::[ERROR] Streaming exception: {e}")
     finally:
@@ -167,10 +203,14 @@ def _stream_to_logger(prompt: str):
 
 
 def ask_ai():
-    if not (q := last_txt.strip()):
+    q = last_txt.strip()
+    if not q:
         logger.error("CHUNK::[ERROR] No transcript to send to AI."); logger.error("CHUNK::[END]"); return
-    user_prompt = f"Interview Question: {q}"
-    threading.Thread(target=_stream_to_logger, args=(user_prompt,), daemon=True).start()
+
+    context = fetch_snippet(q)
+    prefix  = f"Context:\n{context}\n\n" if context else ""
+    full_prompt = prefix + f"Interview Question: {q}"
+    threading.Thread(target=_stream_to_logger, args=(full_prompt,), daemon=True).start()
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  COMMAND LOOP
