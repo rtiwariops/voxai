@@ -137,20 +137,23 @@ def stop_and_transcribe():
     logger.info(f"TRANSCRIBED::{last_txt}")
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  GEMINI STREAM – word-by-word
+#  GEMINI STREAM  – heading-and-bullet auto-flush
 # ─────────────────────────────────────────────────────────────────────────────
+import time
+
 def _stream(prompt: str):
     """
-    Streams Gemini output **line-by-line** (fast and readable):
+    Streams Gemini output quickly and completely:
 
-    CHUNK::[THINKING]
-    CHUNK::## Blob Storage
-    CHUNK::- Blob storage is a highly scalable...
-    CHUNK::- It stores unstructured data such as...
-    CHUNK::[END]
+      CHUNK::[THINKING]
+      CHUNK::## Azure Blob Storage
+      CHUNK::- Object storage service for unstructured data …
+      CHUNK::- Provides 11 nines durability across three zones …
+      CHUNK::[END]
 
-    – fewer log calls than word-by-word → faster output
-    – each bullet arrives as a clean line ready for the UI
+    * newline  → flush
+    * '- '     → flush (bullet start)
+    * 2-second idle → flush buffer
     """
     logger.info("CHUNK::[THINKING]")
 
@@ -158,26 +161,53 @@ def _stream(prompt: str):
         it = chat.send_message(
             prompt,
             stream=True,
-            generation_config={"temperature": 0.4, "max_output_tokens": 640},
+            generation_config={
+                "temperature": 0.4,
+                "max_output_tokens": 800   # allow long, detailed answers
+            },
         )
     except Exception as e:
         logger.error(f"CHUNK::[ERROR] {e}")
         logger.error("CHUNK::[END]")
         return
 
-    buf = ""
+    buf, last_emit = "", time.time()
+
+    def _flush(force=False):
+        nonlocal buf, last_emit
+        if buf.strip():
+            logger.info(f"CHUNK::{buf.strip()}")
+            buf = ""
+            last_emit = time.time()
+        elif force:          # emit even whitespace / empty if forced
+            logger.info("CHUNK::")
+            last_emit = time.time()
+
     try:
         for part in it:
-            txt = getattr(part, "text", "")
-            if not txt:
+            text = getattr(part, "text", "")
+            if not text:
                 continue
-            buf += txt
-            while "\n" in buf:                # flush each complete line
+
+            buf += text
+
+            # Flush immediately on newline
+            while "\n" in buf:
                 line, buf = buf.split("\n", 1)
-                if line.strip():              # skip bare empty lines
+                if line.strip():
                     logger.info(f"CHUNK::{line.strip()}")
-        if buf.strip():                       # leftovers when stream ends
-            logger.info(f"CHUNK::{buf.strip()}")
+                    last_emit = time.time()
+
+            # Flush right after a bullet hyphen + space
+            if buf.startswith("- "):
+                _flush()
+
+            # Idle flush (2 s with no output)
+            if time.time() - last_emit > 2:
+                _flush(force=True)
+
+        # stream ended – flush remainder
+        _flush()
     finally:
         logger.info("CHUNK::[END]")
 
