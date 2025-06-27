@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-#  core.py – Voice-to-Gemini Flash 2.5, bullets only, word-by-word streaming
+#  core.py – Voice-to-Gemini Flash 2.5, detailed bullets, fast streaming
 #  Updated 2025-06-27
 
-import os, sys, threading, logging, numpy as np
+import os, sys, threading, logging, time, numpy as np
 from datetime import date
 from pathlib import Path
 import sounddevice as sd
@@ -26,7 +26,7 @@ logger.info(f"STATUS:: Running core.py from {__file__}")
 # ─────────────────────────────────────────────────────────────────────────────
 load_dotenv()
 API_KEY = os.getenv("GENAI_API_KEY")
-MODEL   = os.getenv("GENAI_MODEL", "gemini-2.5-flash-latest")  # Flash 2.5
+MODEL   = os.getenv("GENAI_MODEL", "gemini-1.5-flash-latest")   # Flash 2.5
 
 if not API_KEY:
     logger.error("CHUNK::[ERROR] Missing GENAI_API_KEY")
@@ -38,26 +38,24 @@ genai.configure(api_key=API_KEY)
 SYSTEM_PROMPT = f"""
 You are **TechMentor**, a senior technical interviewer.
 
-Return **only**:
+Return **only** in this exact Markdown layout:
 
 ## <Heading>
 - Bullet 1 (≤ 25 words)
 - Bullet 2 … (detail)
   - Sub-bullet (≤ 20 words, optional)
 
-No question echo, no paragraphs. Cover purpose, architecture, durability/
-availability, security, pricing, limits, and typical use-cases in clear,
-detailed bullets.
+**There must be a newline after the heading before the first “- ”.**
 
-If you truly do not know the answer, reply exactly:
+Cover purpose, architecture, durability/availability, security, pricing, limits,
+and typical use-cases. If you truly don’t know, reply exactly:
 Unknown: no reliable public source found as of {date.today():%Y-%m-%d}.
 """.strip()
 
-# Allow overriding via local file
-p = Path("system_prompt.txt")
-if p.exists():
-    SYSTEM_PROMPT = p.read_text(encoding="utf-8").strip()
-    logger.info(f"STATUS:: Loaded custom prompt from {p}")
+custom = Path("system_prompt.txt")
+if custom.exists():
+    SYSTEM_PROMPT = custom.read_text(encoding="utf-8").strip()
+    logger.info(f"STATUS:: Loaded custom prompt from {custom}")
 
 try:
     model = genai.GenerativeModel(
@@ -137,33 +135,18 @@ def stop_and_transcribe():
     logger.info(f"TRANSCRIBED::{last_txt}")
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  GEMINI STREAM  – heading-and-bullet auto-flush
+#  GEMINI STREAM – heading & bullet auto-flush
 # ─────────────────────────────────────────────────────────────────────────────
-import time
-
 def _stream(prompt: str):
-    """
-    Streams Gemini output quickly and completely:
-
-      CHUNK::[THINKING]
-      CHUNK::## Azure Blob Storage
-      CHUNK::- Object storage service for unstructured data …
-      CHUNK::- Provides 11 nines durability across three zones …
-      CHUNK::[END]
-
-    * newline  → flush
-    * '- '     → flush (bullet start)
-    * 2-second idle → flush buffer
-    """
     logger.info("CHUNK::[THINKING]")
 
     try:
-        it = chat.send_message(
+        iterator = chat.send_message(
             prompt,
             stream=True,
             generation_config={
                 "temperature": 0.4,
-                "max_output_tokens": 800   # allow long, detailed answers
+                "max_output_tokens": 800,  # allow long answers
             },
         )
     except Exception as e:
@@ -173,41 +156,40 @@ def _stream(prompt: str):
 
     buf, last_emit = "", time.time()
 
-    def _flush(force=False):
+    def _flush():
+        """Emit buffered text as one CHUNK line."""
         nonlocal buf, last_emit
         if buf.strip():
             logger.info(f"CHUNK::{buf.strip()}")
-            buf = ""
-            last_emit = time.time()
-        elif force:          # emit even whitespace / empty if forced
-            logger.info("CHUNK::")
-            last_emit = time.time()
+            buf, last_emit = "", time.time()
 
     try:
-        for part in it:
+        for part in iterator:
             text = getattr(part, "text", "")
             if not text:
                 continue
-
             buf += text
 
-            # Flush immediately on newline
+            # If heading and first bullet are glued, split them
+            if "## " in buf and "- " in buf and (
+                buf.index("- ") < buf.index("\n") if "\n" in buf else True
+            ):
+                head, buf = buf.split("- ", 1)
+                logger.info(f"CHUNK::{head.strip()}")
+                buf = "- " + buf  # keep bullet marker
+
+            # Flush on newline
             while "\n" in buf:
                 line, buf = buf.split("\n", 1)
                 if line.strip():
                     logger.info(f"CHUNK::{line.strip()}")
                     last_emit = time.time()
 
-            # Flush right after a bullet hyphen + space
-            if buf.startswith("- "):
+            # Flush if idle for >2 s
+            if time.time() - last_emit > 2:
                 _flush()
 
-            # Idle flush (2 s with no output)
-            if time.time() - last_emit > 2:
-                _flush(force=True)
-
-        # stream ended – flush remainder
-        _flush()
+        _flush()  # leftovers
     finally:
         logger.info("CHUNK::[END]")
 
@@ -220,9 +202,11 @@ def ask_ai():
         logger.error("CHUNK::[ERROR] No transcript")
         logger.error("CHUNK::[END]")
         return
-
-    prompt = f"Interview Question: {q}"
-    threading.Thread(target=_stream, args=(prompt,), daemon=True).start()
+    threading.Thread(
+        target=_stream,
+        args=(f"Interview Question: {q}",),
+        daemon=True,
+    ).start()
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  CLI LOOP
