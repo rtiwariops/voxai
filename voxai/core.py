@@ -140,32 +140,44 @@ def stop_and_transcribe():
 #  GEMINI STREAM – word-by-word
 # ─────────────────────────────────────────────────────────────────────────────
 def _stream(prompt: str):
+    """
+    Streams Gemini output **line-by-line** (fast and readable):
+
+    CHUNK::[THINKING]
+    CHUNK::## Blob Storage
+    CHUNK::- Blob storage is a highly scalable...
+    CHUNK::- It stores unstructured data such as...
+    CHUNK::[END]
+
+    – fewer log calls than word-by-word → faster output
+    – each bullet arrives as a clean line ready for the UI
+    """
     logger.info("CHUNK::[THINKING]")
+
     try:
         it = chat.send_message(
             prompt,
             stream=True,
-            generation_config={"temperature": 0.4, "max_output_tokens": 512},
+            generation_config={"temperature": 0.4, "max_output_tokens": 640},
         )
     except Exception as e:
         logger.error(f"CHUNK::[ERROR] {e}")
         logger.error("CHUNK::[END]")
         return
 
-    word = ""
+    buf = ""
     try:
         for part in it:
             txt = getattr(part, "text", "")
-            for ch in txt:
-                if ch.isspace():
-                    if word:
-                        logger.info(f"CHUNK::{word}")
-                        word = ""
-                    logger.info(f"CHUNK::{ch}")  # space or newline
-                else:
-                    word += ch
-        if word:
-            logger.info(f"CHUNK::{word}")
+            if not txt:
+                continue
+            buf += txt
+            while "\n" in buf:                # flush each complete line
+                line, buf = buf.split("\n", 1)
+                if line.strip():              # skip bare empty lines
+                    logger.info(f"CHUNK::{line.strip()}")
+        if buf.strip():                       # leftovers when stream ends
+            logger.info(f"CHUNK::{buf.strip()}")
     finally:
         logger.info("CHUNK::[END]")
 
