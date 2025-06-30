@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-# core.py – Whisper → Gemini Flash 2.5, live bullet streaming
+# core.py – Whisper ➜ Gemini Flash 2.5, live bullet streaming
 # Updated 2025-06-28
 
 import os, sys, logging, threading, time, re, numpy as np
 from datetime import date
 from pathlib import Path
+
 import sounddevice as sd
 from faster_whisper import WhisperModel
 from dotenv import load_dotenv
 import google.generativeai as genai
 
-# ─── LOGGING ────────────────────────────────────────────────────────────────
+# ────────── LOGGING ──────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO,
                     format="from-python:%(message)s", stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
-# ─── ENV & GEMINI INIT ──────────────────────────────────────────────────────
+# ────────── ENV & GEMINI INIT ───────────────────────────────────────────────
 load_dotenv()
 API_KEY = os.getenv("GENAI_API_KEY")
 MODEL   = os.getenv("GENAI_MODEL", "gemini-1.5-flash-latest")
@@ -38,14 +39,14 @@ If unknown, reply exactly:
 Unknown: no reliable public source found as of {date.today():%Y-%m-%d}.
 """.strip()
 
-custom = Path("system_prompt.txt")
-if custom.exists():
-    SYSTEM_PROMPT = custom.read_text(encoding="utf-8").strip()
+p = Path("system_prompt.txt")
+if p.exists():
+    SYSTEM_PROMPT = p.read_text(encoding="utf-8").strip()
 
 chat = genai.GenerativeModel(MODEL, system_instruction=SYSTEM_PROMPT).start_chat()
 logger.info(f"STATUS:: Chat started with model '{MODEL}'")
 
-# ─── WHISPER (MIC) ──────────────────────────────────────────────────────────
+# ────────── WHISPER AUDIO SETUP ─────────────────────────────────────────────
 whisper = WhisperModel("base", compute_type="int8")
 SR, CH, BS = 16000, 1, 4000
 try:
@@ -53,10 +54,13 @@ try:
 except StopIteration:
     DEV = None
 
-chunks: list[np.ndarray] = []; recording = False; last_txt = ""
+chunks: list[np.ndarray] = []
+recording = False
+last_txt  = ""
 
 def _audio_cb(indata, *_):
-    if recording: chunks.append(indata.copy())
+    if recording:
+        chunks.append(indata.copy())
 
 def start_listening():
     global recording, chunks
@@ -76,72 +80,78 @@ def stop_and_transcribe():
     logger.info("STATUS:: Recording Stopped")
     if not chunks:
         last_txt = ""; logger.info("TRANSCRIBED::"); return
-    samples = np.concatenate(chunks,axis=0)[:,0].astype(np.float32)
+    samples = np.concatenate(chunks, axis=0)[:,0].astype(np.float32)
     segs,_  = whisper.transcribe(samples, language="en", beam_size=1)
     last_txt = " ".join(s.text.strip() for s in segs).strip()
     logger.info(f"TRANSCRIBED::{last_txt}")
 
-# ─── STREAMING WITH BULLET-SPLIT ────────────────────────────────────────────
-_bullet_re  = re.compile(r'(?<!\n)( {0,2}- )')   # matches "- " or "  - " not preceded by \n
-_end_punct  = ".!?"                              # heuristic for completed answer
-
-def _flush(line: str):
-    if line.strip():
-        logger.info(f"CHUNK::{line.strip()}")
+# ────────── STREAMING with BULLET-SPLIT ─────────────────────────────────────
+bullet_fix   = re.compile(r'(?<!\n)( {0,2}- )')   # "- " or "  - " not preceded by \n
 
 def _stream_live(prompt: str):
-    """Stream Gemini; split glued bullets; fallback once if only heading arrives."""
+    """
+    • True streaming from Gemini Flash.
+    • Inserts a newline before every bullet marker the instant it appears,
+      so each bullet is flushed separately.
+    • If stream ends without any bullet (safety/truncation), retries once
+      with non-stream call and keeps streaming that result.
+    """
     logger.info("CHUNK::[THINKING]")
-    buf, got_bullet, heading_only = "", False, False
+    buf, got_bullet, need_retry = "", False, False
+
     try:
-        iterator = chat.send_message(
-            prompt, stream=True,
-            generation_config={"temperature":0.4, "max_output_tokens":2048},
-        )
-        for part in iterator:
+        it = chat.send_message(prompt, stream=True,
+                               generation_config={"temperature":0.4,
+                                                  "max_output_tokens":2048})
+        for part in it:
             try:
-                txt = part.text                    # may raise ValueError on safety
-            except ValueError:                     # safety abort → fallback later
-                heading_only = not got_bullet
+                txt = part.text                       # may raise ValueError on safety
+            except ValueError:                        # safety abort
+                need_retry = True
                 break
+
             if not txt: continue
+            # → instant newline before "- " or "  - "
+            txt = bullet_fix.sub(r'\n\1', txt)
             buf += txt
-            # split glued bullets
-            while True:
-                m = _bullet_re.search(buf)
-                if not m: break
-                pre, buf = buf[:m.start(1)], buf[m.start(1):]
-                if pre.strip(): _flush(pre)
-                # leave "- " in buf for next newline flush
-            # flush complete lines
+
             while "\n" in buf:
-                line, buf = buf.split("\n",1)
-                _flush(line); got_bullet |= line.lstrip().startswith("-")
-        if buf.strip(): _flush(buf); got_bullet |= buf.lstrip().startswith("-")
-        heading_only = not got_bullet
+                line, buf = buf.split("\n", 1)
+                if line.strip():
+                    logger.info(f"CHUNK::{line.strip()}")
+                    if line.lstrip().startswith("-"): got_bullet = True
+
+        if buf.strip():
+            logger.info(f"CHUNK::{buf.strip()}")
+            if buf.lstrip().startswith("-"): got_bullet = True
+        if not got_bullet: need_retry = True
+
     except Exception as e:
         logger.error(f"CHUNK::[ERROR] {e}")
-        heading_only = True
-    if heading_only:                                    # retry once non-stream
+        need_retry = True
+
+    if need_retry:
         try:
             full = chat.send_message(prompt, stream=False,
-                                      generation_config={"temperature":0.4,
-                                                         "max_output_tokens":2048}).text
-            for line in full.splitlines(): _flush(line)
+                                     generation_config={"temperature":0.4,
+                                                        "max_output_tokens":2048}).text
+            for line in bullet_fix.sub(r'\n\1', full).splitlines():
+                if line.strip():
+                    logger.info(f"CHUNK::{line.strip()}")
         except Exception as e2:
             logger.error(f"CHUNK::[ERROR] fallback: {e2}")
+
     logger.info("CHUNK::[END]")
 
-# ─── MAIN ‘ASK’ ENTRY ───────────────────────────────────────────────────────
+# ────────── ASK ENTRY ───────────────────────────────────────────────────────
 def ask_ai():
     q = last_txt.strip()
     if not q:
         logger.error("CHUNK::[ERROR] No transcript"); logger.error("CHUNK::[END]"); return
     threading.Thread(target=_stream_live,
-                     args=(f"Interview Question: {q}",),
-                     daemon=True).start()
+                     args=(f"Interview Question: {q}",), daemon=True).start()
 
-# ─── CLI LOOP ───────────────────────────────────────────────────────────────
+# ────────── CLI LOOP ────────────────────────────────────────────────────────
 def main_loop():
     logger.info("STATUS:: voxai.core ready")
     for raw in sys.stdin:
