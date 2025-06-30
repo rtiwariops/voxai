@@ -91,42 +91,69 @@ def stop_and_transcribe():
     logger.info(f"TRANSCRIBED::{last_txt}")
 
 # ─── STREAMING WITH TRUNCATION-CHECK ────────────────────────────────────────
+# ── STREAM - flush heading + each bullet immediately ─────────────────────────
 def _stream_full(prompt: str):
     """
-    1. Stream Gemini line-by-line.
-    2. If safety abort or the last flushed line lacks final punctuation,
-       re-query once without streaming to get the full text.
+    Streams Gemini line-by-line AND splits glued bullets:
+
+      CHUNK::## Azure Blob Storage
+      CHUNK::- **Purpose**: …
+      CHUNK::- **Architecture**: …
+      …
+
+    If Gemini stops early (safety or truncation) we retry once non-stream.
     """
     logger.info("CHUNK::[THINKING]")
-    buffer, last_line, truncated = "", "", False
+    buf, last_line, truncated, safety_abort = "", "", False, False
+
     try:
         it = chat.send_message(
             prompt,
             stream=True,
-            generation_config={"temperature":0.4, "max_output_tokens":2048},
+            generation_config={"temperature": 0.4, "max_output_tokens": 2048},
         )
+
         for part in it:
-            try: text = part.text        # raises ValueError on safety abort
+            try:
+                txt = part.text              # raises ValueError on SAFETY
             except ValueError:
-                truncated = True
+                safety_abort = True
                 break
-            if not text: continue
-            buffer += text
-            while "\n" in buffer:
-                line, buffer = buffer.split("\n", 1)
+
+            if not txt:
+                continue
+            buf += txt
+
+            # ①  If a bullet ("- ") is glued to previous text (no \n yet),
+            #    split it so the heading flushes immediately:
+            while "- " in buf and (buf.find("- ") < buf.find("\n") if "\n" in buf else True):
+                before, after = buf.split("- ", 1)
+                if before.strip():
+                    logger.info(f"CHUNK::{before.strip()}")
+                buf = "- " + after  # keep the "-" with the rest
+
+            # ②  Flush each full line
+            while "\n" in buf:
+                line, buf = buf.split("\n", 1)
                 if line.strip():
                     last_line = line.strip()
                     logger.info(f"CHUNK::{last_line}")
-        if buffer.strip():
-            last_line = buffer.strip()
+
+        # flush leftovers
+        if buf.strip():
+            last_line = buf.strip()
             logger.info(f"CHUNK::{last_line}")
-        # Heuristic: if last line ends without sentence punctuation, assume cut
+
+        # ③  Heuristic: if the last line doesn’t end with punctuation, assume cut
         if last_line and last_line[-1] not in ".!?":
             truncated = True
-    except Exception as e:
-        logger.error(f"CHUNK::[ERROR] {e}"); truncated = True
 
-    if truncated:
+    except Exception as e:
+        logger.error(f"CHUNK::[ERROR] {e}")
+        truncated = True
+
+    # ④  Fallback on safety abort or truncation
+    if safety_abort or truncated:
         try:
             full = chat.send_message(prompt, stream=False).text
             logger.info(f"CHUNK::{full.strip()}")
@@ -134,6 +161,7 @@ def _stream_full(prompt: str):
             logger.error(f"CHUNK::[ERROR] fallback: {e2}")
 
     logger.info("CHUNK::[END]")
+
 
 def ask_ai():
     q = last_txt.strip()
