@@ -118,16 +118,46 @@
 <script>
   const { ipcRenderer } = require('electron');
 
-  // --- DOM --------------------------------------------------------------
   const startBtn   = document.getElementById('startBtn');
   const stopBtn    = document.getElementById('stopBtn');
   const askBtn     = document.getElementById('askBtn');
   const transcript = document.getElementById('transcript');
-  const answerRoot = document.getElementById('answer');
+  const answerEl   = document.getElementById('answer');
 
-  // --- UI state ---------------------------------------------------------
   let recording = false;
   let awaiting  = false;
+  let buffer    = '';
+
+  // ---------- helper ----------------------------------------------------
+  function makeBullets(text) {
+    const lines = text.replace(/\r/g, '')
+                      .split(/\n+/)
+                      .map(l => l.trim())
+                      .filter(Boolean);
+
+    let html          = '<ul>';
+    let currentBullet = '';
+
+    lines.forEach(raw => {
+      const isDash = raw.startsWith('-');
+      const line   = raw.replace(/^[-•]\s*/, '').replace(/\*\*/g, '').trim();
+
+      // New category bullet
+      if (isDash && /:/.test(line)) {
+        if (currentBullet) html += `<li>${currentBullet}</li>`;
+        const [title, ...rest] = line.split(':');
+        currentBullet = `<strong>${title.trim()}:</strong> ${rest.join(':').trim()}`;
+        return;
+      }
+
+      // Continuation line — merge onto current bullet
+      currentBullet += ` ${line}`;
+    });
+
+    if (currentBullet) html += `<li>${currentBullet}</li>`;
+    html += '</ul>';
+    return html;
+  }
 
   function updateButtons() {
     startBtn.classList.toggle('active', recording);
@@ -135,86 +165,46 @@
     askBtn.disabled = awaiting || !transcript.textContent.trim();
   }
 
-  // --- helpers ----------------------------------------------------------
-  function addHeading(text) {
-    const h = document.createElement('h3');
-    h.textContent = text.replace(/^#+\s*/, '').trim();
-    answerRoot.appendChild(h);
-    const ul = document.createElement('ul');
-    answerRoot.appendChild(ul);
-    return ul;
-  }
-
-  function addBullet(ul, raw) {
-    const li = document.createElement('li');
-    li.textContent = raw.replace(/^-+\s*/, '').trim();
-    ul.appendChild(li);
-  }
-
-  // --- button events ----------------------------------------------------
+  // ---------- button events --------------------------------------------
   startBtn.onclick = () => {
-    if (recording) return;
     recording = true;
     ipcRenderer.send('to-python', 'START');
     updateButtons();
   };
 
   stopBtn.onclick = () => {
-    if (!recording) return;
     recording = false;
     ipcRenderer.send('to-python', 'STOP');
     updateButtons();
   };
 
   askBtn.onclick = () => {
-    if (awaiting) return;
-    awaiting  = true;
-    answerRoot.innerHTML = '';          // clear old answer
+    awaiting      = true;
+    buffer        = '';
+    answerEl.textContent = 'Thinking…';
     ipcRenderer.send('to-python', 'ASK::');
     updateButtons();
   };
 
-  // --- streaming from Python -------------------------------------------
-  let currentUL = null;
-
+  // ---------- stream from Python ---------------------------------------
   ipcRenderer.on('from-python', (_, raw) => {
-
-    // 1. Transcript line
     if (raw.startsWith('TRANSCRIBED::')) {
       transcript.textContent = raw.slice(13);
       updateButtons();
       return;
     }
 
-    // 2. Streaming chunk
-    if (!raw.startsWith('CHUNK::')) return;      // ignore anything else
+    if (!raw.startsWith('CHUNK::')) return;
     const chunk = raw.slice(7);
 
-    if (chunk === '[END]') {                     // finished
-      awaiting = false;
+    if (chunk === '[END]') {
+      awaiting           = false;
+      answerEl.innerHTML = makeBullets(buffer);
       updateButtons();
       return;
     }
-    if (chunk === '[THINKING]') {               // optional placeholder
-      return;
-    }
 
-    // Split on hard new-lines (Python already injects them before every "- ")
-    const lines = chunk.split(/\n/).filter(Boolean);
-    for (const line of lines) {
-      if (line.startsWith('##')) {
-        // New section
-        currentUL = addHeading(line);
-      } else if (line.trim().startsWith('-')) {
-        if (!currentUL) currentUL = addHeading('');   // safeguard
-        addBullet(currentUL, line);
-      } else {
-        // Fallback: append as plain text
-        const p = document.createElement('p');
-        p.textContent = line.trim();
-        answerRoot.appendChild(p);
-      }
-    }
+    buffer += chunk;
   });
 
   updateButtons();
