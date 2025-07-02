@@ -165,28 +165,41 @@
 <head>
   <meta charset="UTF-8" />
   <title>VoxAI</title>
+
   <style>
-    body{margin:0;padding:1rem;font-family:sans-serif;background:#121212;color:#eaeaea}
-    .controls{display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}
-    button{padding:.6rem 1.2rem;border:none;border-radius:.5rem;background:#1e1e1e;color:#eaeaea;cursor:pointer}
-    button:disabled{opacity:.5;cursor:not-allowed}
-    #transcript,#answer{max-width:840px;margin:.5rem auto;padding:1rem;background:#1e1e1e;border-radius:.5rem}
-    #answer ul{margin:0;padding-left:1.2rem}
-    #answer li{list-style:disc;margin-bottom:.5rem}
+    :root {
+      --bg: #121212;
+      --panel: #1e1e1e;
+      --fg: #ffffff;
+      --accent: #3b82f6;
+    }
+    body      { margin:0; padding:1rem; font-family:sans-serif; background:var(--bg); color:var(--fg); }
+    h1        { text-align:center; margin:0 0 1rem; }
+    .controls { display:flex; gap:1rem; flex-wrap:wrap; justify-content:center; margin-bottom:1rem; }
+    button    { padding:.6rem 1.2rem; border:none; border-radius:.5rem; background:var(--panel); color:var(--fg); cursor:pointer; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    #transcript,#answer { max-width:840px; margin:.5rem auto; padding:1rem; background:var(--panel); border-radius:.5rem; }
+    #answer ul { margin:0; padding-left:1.2rem; }
+    #answer li { list-style:disc; margin:0 0 .5rem; }
   </style>
 </head>
+
 <body>
-  <h1 style="text-align:center">VoxAI</h1>
+  <h1>VoxAI</h1>
+
   <section class="controls">
     <button id="startBtn">Start</button>
     <button id="stopBtn" disabled>Stop</button>
-    <button id="askBtn"  disabled>Ask AI</button>
+    <button id="askBtn"  disabled>Ask&nbsp;AI</button>
   </section>
+
   <section id="transcript"></section>
   <section id="answer"></section>
 
+<!-- ───────────────────────── SCRIPT ───────────────────────── -->
 <script>
   const { ipcRenderer } = require('electron');
+
   const startBtn   = document.getElementById('startBtn');
   const stopBtn    = document.getElementById('stopBtn');
   const askBtn     = document.getElementById('askBtn');
@@ -197,86 +210,98 @@
   let awaiting  = false;
   let buffer    = '';
 
-  function setState(){
+  /* ─── helper: enable / disable buttons ───────────────────── */
+  function setState() {
     startBtn.disabled = recording || awaiting;
     stopBtn.disabled  = !recording;
     askBtn.disabled   = awaiting || !transcript.textContent.trim();
   }
 
-  // ---------------- bullet formatter -------------------
-  function makeBullets(text){
-    const lines = text.replace(/\r/g,'').split(/\n+/).map(l=>l.trim()).filter(Boolean);
-    const ul = document.createElement('ul');
+  /* ─── helper: build one-bullet-per-category list ──────────── */
+  function formatBullets(text) {
+    const ul     = document.createElement('ul');
+    const lines  = text.replace(/\r/g,'')
+                       .split(/\n+/)
+                       .map(l => l.trim())
+                       .filter(Boolean);
+
     let currentLi = null;
 
-    for(const raw of lines){
-      if(raw.startsWith('-')){
-        // New bullet (possible category)
-        const clean = raw.replace(/^[-•]\s*/, '').replace(/\*\*/g,'').trim();
-        const colon = clean.indexOf(':');
-        const li = document.createElement('li');
-        if(colon!==-1){
-          const strong = document.createElement('strong');
-          strong.textContent = clean.slice(0,colon).trim()+':';
+    lines.forEach(raw => {
+      if (raw.startsWith('-')) {
+        // ── new bullet (could contain Title: …) ─────────────────
+        const clean  = raw.replace(/^[-•]\s*/, '').replace(/\*\*/g,'');
+        const idx    = clean.indexOf(':');
+
+        const li     = document.createElement('li');
+        const strong = document.createElement('strong');
+
+        if (idx !== -1) {                    // Title: sentence
+          strong.textContent = clean.slice(0, idx).trim() + ':';
           li.appendChild(strong);
-          const body = clean.slice(colon+1).trim();
-          if(body) li.appendChild(document.createTextNode(' '+body));
-        }else{
+          li.appendChild(document.createTextNode(' ' + clean.slice(idx + 1).trim()));
+        } else {                             // plain bullet
           li.appendChild(document.createTextNode(clean));
         }
         ul.appendChild(li);
         currentLi = li;
-      }else if(currentLi){
-        // Continuation line, append to same bullet
-        currentLi.appendChild(document.createTextNode(' '+raw.replace(/\*\*/g,'')));
+      } else if (currentLi) {
+        // ── continuation line → merge into same bullet ─────────
+        currentLi.append(' ' + raw.replace(/\*\*/g,''));
       }
-    }
+    });
     return ul;
   }
 
-  // ---------------- controls ---------------------------
-  startBtn.onclick = ()=>{
-    recording=true;
-    buffer='';
-    answerEl.textContent='';
-    ipcRenderer.send('to-python','START');
-    setState();
-  };
-  stopBtn.onclick = ()=>{
-    recording=false;
-    ipcRenderer.send('to-python','STOP');
-    setState();
-  };
-  askBtn.onclick = ()=>{
-    awaiting=true;
-    buffer='';
-    answerEl.textContent='Thinking…';
-    ipcRenderer.send('to-python','ASK::');
+  /* ─── control handlers ────────────────────────────────────── */
+  startBtn.onclick = () => {
+    recording = true;
+    buffer    = '';
+    answerEl.textContent = '';
+    ipcRenderer.send('to-python', 'START');
     setState();
   };
 
-  // ---------------- IPC stream ------------------------
-  ipcRenderer.on('from-python',(_,msg)=>{
-    if(msg.startsWith('TRANSCRIBED::')){
+  stopBtn.onclick = () => {
+    recording = false;
+    ipcRenderer.send('to-python', 'STOP');
+    setState();
+  };
+
+  askBtn.onclick = () => {
+    awaiting = true;
+    buffer   = '';
+    answerEl.textContent = 'Thinking…';
+    ipcRenderer.send('to-python', 'ASK::');
+    setState();
+  };
+
+  /* ─── stream coming back from Python ──────────────────────── */
+  ipcRenderer.on('from-python', (_, msg) => {
+    if (msg.startsWith('TRANSCRIBED::')) {
       transcript.textContent = msg.slice(13);
       setState();
       return;
     }
-    if(!msg.startsWith('CHUNK::')) return;
+    if (!msg.startsWith('CHUNK::')) return;
+
     const chunk = msg.slice(7);
-    if(chunk==='[END]'){
-      awaiting=false;
-      answerEl.innerHTML='';
-      answerEl.appendChild(makeBullets(buffer));
+
+    if (chunk === '[END]') {
+      awaiting        = false;
+      answerEl.innerHTML = '';             // clear preview
+      answerEl.appendChild(formatBullets(buffer));
       setState();
       return;
     }
+
+    // build up the answer incrementally
     buffer += chunk;
-    answerEl.textContent = buffer; // quick live preview
+    answerEl.textContent = buffer;         // (optional live preview)
   });
 
   setState();
 </script>
-
+<!-- ───────────────────────── END SCRIPT ────────────────────── -->
 </body>
 </html>
