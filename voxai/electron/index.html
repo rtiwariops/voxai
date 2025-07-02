@@ -165,143 +165,156 @@
 <head>
   <meta charset="UTF-8" />
   <title>VoxAI</title>
-
   <style>
-    :root {
-      --bg: #121212;
-      --panel: #1e1e1e;
-      --fg: #ffffff;
-      --accent: #3b82f6;
+    body {
+      background: #121212;
+      color: #fff;
+      font-family: sans-serif;
+      padding: 1rem;
     }
-    body      { margin:0; padding:1rem; font-family:sans-serif; background:var(--bg); color:var(--fg); }
-    h1        { text-align:center; margin:0 0 1rem; }
-    .controls { display:flex; gap:1rem; flex-wrap:wrap; justify-content:center; margin-bottom:1rem; }
-    button    { padding:.6rem 1.2rem; border:none; border-radius:.5rem; background:var(--panel); color:var(--fg); cursor:pointer; }
-    button:disabled { opacity:.5; cursor:not-allowed; }
-    #transcript,#answer { max-width:840px; margin:.5rem auto; padding:1rem; background:var(--panel); border-radius:.5rem; }
-    #answer ul { margin:0; padding-left:1.2rem; }
-    #answer li { list-style:disc; margin:0 0 .5rem; }
+    button {
+      margin-right: 1rem;
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 0.25rem;
+      background: #444;
+      color: #fff;
+      cursor: pointer;
+    }
+    button.active { background: #0a84ff; }
+    button:disabled { opacity: 0.5; cursor: default; }
+
+    .card {
+      background: #1e1e1e;
+      padding: 1rem;
+      margin-top: 1rem;
+      border-radius: 0.5rem;
+    }
+
+    #answer { line-height: 1.5; white-space: normal; min-height: 3em; }
+    #answer p { margin: .5rem 0; }
   </style>
 </head>
-
 <body>
-  <h1>VoxAI</h1>
+  <h1>🎧 VoxAI</h1>
+  <button id="startBtn">Start</button>
+  <button id="stopBtn">Stop</button>
+  <button id="askBtn" disabled>Ask AI</button>
 
-  <section class="controls">
-    <button id="startBtn">Start</button>
-    <button id="stopBtn" disabled>Stop</button>
-    <button id="askBtn"  disabled>Ask&nbsp;AI</button>
-  </section>
+  <div class="card">
+    <h3>Transcript</h3>
+    <div id="transcript">...</div>
+  </div>
+  <div class="card">
+    <h3>Answer</h3>
+    <div id="answer">Waiting for input…</div>
+  </div>
 
-  <section id="transcript"></section>
-  <section id="answer"></section>
-
-<!-- ───────────────────────── SCRIPT ───────────────────────── -->
 <script>
   const { ipcRenderer } = require('electron');
 
+  // --- DOM --------------------------------------------------------------
   const startBtn   = document.getElementById('startBtn');
   const stopBtn    = document.getElementById('stopBtn');
   const askBtn     = document.getElementById('askBtn');
   const transcript = document.getElementById('transcript');
-  const answerEl   = document.getElementById('answer');
+  const answerRoot = document.getElementById('answer');
 
+  // --- UI state ---------------------------------------------------------
   let recording = false;
   let awaiting  = false;
-  let buffer    = '';
+  let currentP  = null;       // <p> element we’re appending to
 
-  /* ─── helper: enable / disable buttons ───────────────────── */
-  function setState() {
-    startBtn.disabled = recording || awaiting;
-    stopBtn.disabled  = !recording;
-    askBtn.disabled   = awaiting || !transcript.textContent.trim();
+  function updateButtons() {
+    startBtn.classList.toggle('active', recording);
+    stopBtn .classList.toggle('active', !recording && !awaiting);
+    askBtn.disabled = awaiting || !transcript.textContent.trim();
   }
 
-  /* ─── helper: build one-bullet-per-category list ──────────── */
-  function formatBullets(text) {
-    const ul     = document.createElement('ul');
-    const lines  = text.replace(/\r/g,'')
-                       .split(/\n+/)
-                       .map(l => l.trim())
-                       .filter(Boolean);
+  // --- helpers ----------------------------------------------------------
+  function startNewParagraph(rawLine) {
+    const clean = rawLine                 // remove "- " and any ** … **
+      .replace(/^[-•]\s*/, '')
+      .replace(/\*\*/g, '')
+      .trim();
 
-    let currentLi = null;
+    const idx   = clean.indexOf(':');
+    const title = idx > -1 ? clean.slice(0, idx).trim() : clean;
+    const body  = idx > -1 ? clean.slice(idx + 1).trim() : '';
 
-    lines.forEach(raw => {
-      if (raw.startsWith('-')) {
-        // ── new bullet (could contain Title: …) ─────────────────
-        const clean  = raw.replace(/^[-•]\s*/, '').replace(/\*\*/g,'');
-        const idx    = clean.indexOf(':');
+    const p     = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = title + ':';
+    p.appendChild(strong);
 
-        const li     = document.createElement('li');
-        const strong = document.createElement('strong');
-
-        if (idx !== -1) {                    // Title: sentence
-          strong.textContent = clean.slice(0, idx).trim() + ':';
-          li.appendChild(strong);
-          li.appendChild(document.createTextNode(' ' + clean.slice(idx + 1).trim()));
-        } else {                             // plain bullet
-          li.appendChild(document.createTextNode(clean));
-        }
-        ul.appendChild(li);
-        currentLi = li;
-      } else if (currentLi) {
-        // ── continuation line → merge into same bullet ─────────
-        currentLi.append(' ' + raw.replace(/\*\*/g,''));
-      }
-    });
-    return ul;
+    if (body) p.appendChild(document.createTextNode(' ' + body));
+    answerRoot.appendChild(p);
+    return p;
   }
 
-  /* ─── control handlers ────────────────────────────────────── */
+  // --- button events ----------------------------------------------------
   startBtn.onclick = () => {
+    if (recording) return;
     recording = true;
-    buffer    = '';
-    answerEl.textContent = '';
     ipcRenderer.send('to-python', 'START');
-    setState();
+    updateButtons();
   };
 
   stopBtn.onclick = () => {
+    if (!recording) return;
     recording = false;
     ipcRenderer.send('to-python', 'STOP');
-    setState();
+    updateButtons();
   };
 
   askBtn.onclick = () => {
-    awaiting = true;
-    buffer   = '';
-    answerEl.textContent = 'Thinking…';
+    if (awaiting) return;
+    awaiting  = true;
+    answerRoot.textContent = '';          // clear old answer
+    currentP = null;
     ipcRenderer.send('to-python', 'ASK::');
-    setState();
+    updateButtons();
   };
 
-  /* ─── stream coming back from Python ──────────────────────── */
-  ipcRenderer.on('from-python', (_, msg) => {
-    if (msg.startsWith('TRANSCRIBED::')) {
-      transcript.textContent = msg.slice(13);
-      setState();
-      return;
-    }
-    if (!msg.startsWith('CHUNK::')) return;
+  // --- streaming from Python -------------------------------------------
+  ipcRenderer.on('from-python', (_, raw) => {
 
-    const chunk = msg.slice(7);
-
-    if (chunk === '[END]') {
-      awaiting        = false;
-      answerEl.innerHTML = '';             // clear preview
-      answerEl.appendChild(formatBullets(buffer));
-      setState();
+    // Transcript arrives once
+    if (raw.startsWith('TRANSCRIBED::')) {
+      transcript.textContent = raw.slice(13);
+      updateButtons();
       return;
     }
 
-    // build up the answer incrementally
-    buffer += chunk;
-    answerEl.textContent = buffer;         // (optional live preview)
+    // Data chunks
+    if (!raw.startsWith('CHUNK::')) return;
+    const chunk = raw.slice(7);
+
+    if (chunk === '[END]') {              // finished
+      awaiting = false;
+      updateButtons();
+      return;
+    }
+    if (chunk === '[THINKING]') return;   // optional placeholder
+
+    // Split chunk into logical lines
+    chunk.split(/\n/).forEach(line => {
+      if (!line.trim()) return;
+
+      if (line.startsWith('-')) {
+        // New category bullet
+        currentP = startNewParagraph(line);
+      } else if (currentP) {
+        // Continuation → append to same <p>
+        currentP.append(' ' + line.replace(/\*\*/g, '').trim());
+      } else {
+        // Fallback (shouldn’t really happen)
+        currentP = startNewParagraph('- ' + line);
+      }
+    });
   });
 
-  setState();
+  updateButtons();
 </script>
-<!-- ───────────────────────── END SCRIPT ────────────────────── -->
 </body>
 </html>
