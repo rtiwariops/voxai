@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # ────────── ENV & GEMINI INIT ────────────────────────────────────────────────
 load_dotenv()
 API_KEY = os.getenv("GENAI_API_KEY")
-MODEL   = os.getenv("GENAI_MODEL", "gemini-1.5-flash-latest")
+MODEL   = os.getenv("GENAI_MODEL", "gemini-2.5-flash-latest")
 if not API_KEY:
     logger.error("CHUNK::[ERROR] Missing GENAI_API_KEY")
     logger.error("CHUNK::[END]")
