@@ -1,261 +1,503 @@
-<!-- <!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <title>VoxAI</title>
-  <style>
-    body {
-      background: #121212;
-      color: #fff;
-      font-family: sans-serif;
-      padding: 1rem;
-    }
-    button {
-      margin-right: 1rem;
-      padding: 0.5rem 1rem;
-      border: none;
-      border-radius: 0.25rem;
-      background: #444;
-      color: #fff;
-      cursor: pointer;
-    }
-    button.active { background: #0a84ff; }
-    button:disabled { opacity: 0.5; cursor: default; }
-
-    .card {
-      background: #1e1e1e;
-      padding: 1rem;
-      margin-top: 1rem;
-      border-radius: 0.5rem;
-    }
-
-    #answer {
-      line-height: 1.5;
-      white-space: pre-wrap;
-      min-height: 3em;
-    }
-  </style>
-</head>
-<body>
-  <h1>🎧 VoxAI</h1>
-  <button id="startBtn">Start</button>
-  <button id="stopBtn">Stop</button>
-  <button id="askBtn" disabled>Ask AI</button>
-
-  <div class="card">
-    <h3>Transcript</h3>
-    <div id="transcript">...</div>
-  </div>
-  <div class="card">
-    <h3>Answer</h3>
-    <p id="answer">Waiting for input…</p>
-  </div>
-
-<script>
-  const { ipcRenderer } = require('electron');
-
-  // --- DOM --------------------------------------------------------------
-  const startBtn   = document.getElementById('startBtn');
-  const stopBtn    = document.getElementById('stopBtn');
-  const askBtn     = document.getElementById('askBtn');
-  const transcript = document.getElementById('transcript');
-  const answerRoot = document.getElementById('answer');
-
-  // --- UI state ---------------------------------------------------------
-  let recording = false;
-  let awaiting  = false;
-
-  function updateButtons() {
-    startBtn.classList.toggle('active', recording);
-    stopBtn.classList.toggle('active', !recording && !awaiting);
-    askBtn.disabled = awaiting || !transcript.textContent.trim();
-  }
-
-  // --- helpers ----------------------------------------------------------
-  function addHeading(text) {
-    const h = document.createElement('h3');
-    h.textContent = text.replace(/^#+\s*/, '').trim();
-    answerRoot.appendChild(h);
-    const ul = document.createElement('ul');
-    answerRoot.appendChild(ul);
-    return ul;
-  }
-
-  function addBullet(ul, raw) {
-    const li = document.createElement('li');
-    li.textContent = raw.replace(/^-+\s*/, '').trim();
-    ul.appendChild(li);
-  }
-
-  // --- button events ----------------------------------------------------
-  startBtn.onclick = () => {
-    if (recording) return;
-    recording = true;
-    ipcRenderer.send('to-python', 'START');
-    updateButtons();
-  };
-
-  stopBtn.onclick = () => {
-    if (!recording) return;
-    recording = false;
-    ipcRenderer.send('to-python', 'STOP');
-    updateButtons();
-  };
-
-  askBtn.onclick = () => {
-    if (awaiting) return;
-    awaiting  = true;
-    answerRoot.innerHTML = '';          // clear old answer
-    ipcRenderer.send('to-python', 'ASK::');
-    updateButtons();
-  };
-
-  // --- streaming from Python -------------------------------------------
-  let currentUL = null;
-
-  ipcRenderer.on('from-python', (_, raw) => {
-
-    // 1. Transcript line
-    if (raw.startsWith('TRANSCRIBED::')) {
-      transcript.textContent = raw.slice(13);
-      updateButtons();
-      return;
-    }
-
-    // 2. Streaming chunk
-    if (!raw.startsWith('CHUNK::')) return;      // ignore anything else
-    const chunk = raw.slice(7);
-
-    if (chunk === '[END]') {                     // finished
-      awaiting = false;
-      updateButtons();
-      return;
-    }
-    if (chunk === '[THINKING]') {               // optional placeholder
-      return;
-    }
-
-    // Split on hard new-lines (Python already injects them before every "- ")
-    const lines = chunk.split(/\n/).filter(Boolean);
-    for (const line of lines) {
-      if (line.startsWith('##')) {
-        // New section
-        currentUL = addHeading(line);
-      } else if (line.trim().startsWith('-')) {
-        if (!currentUL) currentUL = addHeading('');   // safeguard
-        addBullet(currentUL, line);
-      } else {
-        // Fallback: append as plain text
-        const p = document.createElement('p');
-        p.textContent = line.trim();
-        answerRoot.appendChild(p);
-      }
-    }
-  });
-
-  updateButtons();
-</script>
-
-
-</body>
-</html> -->
 
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8" />
-  <title>VoxAI</title>
+  <title>VoxAI - Voice AI Assistant</title>
   <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
     body {
-      background: #121212;
-      color: #fff;
-      font-family: sans-serif;
-      padding: 1rem;
+      background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+      color: #e8e8e8;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
     }
-    button {
-      margin-right: 1rem;
-      padding: 0.5rem 1rem;
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      background: linear-gradient(45deg, #00d2ff, #3a7bd5, #ff6b6b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+      text-shadow: 0 0 30px rgba(0, 210, 255, 0.3);
+    }
+
+    .header p {
+      color: #a0a0a0;
+      font-size: 1.1rem;
+      margin-bottom: 2rem;
+    }
+
+    /* Control Panel */
+    .control-panel {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 0.75rem 1.5rem;
       border: none;
-      border-radius: 0.25rem;
-      background: #444;
-      color: #fff;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
       cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      min-width: 120px;
     }
-    button.active { background: #0a84ff; }
-    button:disabled { opacity: 0.5; cursor: default; }
+
+    .btn:before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transition: left 0.5s;
+    }
+
+    .btn:hover:before {
+      left: 100%;
+    }
+
+    .btn-start {
+      background: linear-gradient(45deg, #00c851, #00ff41);
+      color: #000;
+      box-shadow: 0 4px 15px rgba(0, 200, 81, 0.3);
+    }
+
+    .btn-start:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 200, 81, 0.4);
+    }
+
+    .btn-start.active {
+      background: linear-gradient(45deg, #ff4444, #ff6b6b);
+      animation: pulse 2s infinite;
+    }
+
+    .btn-stop {
+      background: linear-gradient(45deg, #ff6b6b, #ff4444);
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+    }
+
+    .btn-stop:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+    }
+
+    .btn-ask {
+      background: linear-gradient(45deg, #3a7bd5, #00d2ff);
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(58, 123, 213, 0.3);
+    }
+
+    .btn-ask:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(58, 123, 213, 0.4);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3); }
+      50% { box-shadow: 0 4px 25px rgba(255, 107, 107, 0.6); }
+      100% { box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3); }
+    }
+
+    /* Cards */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
 
     .card {
-      background: #1e1e1e;
-      padding: 1rem;
-      margin-top: 1rem;
-      border-radius: 0.5rem;
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 1.5rem;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
     }
 
-    #answer { line-height: 1.5; white-space: normal; min-height: 3em; }
-    #answer p { margin: .5rem 0; }
+    .card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .card:before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, #00d2ff, #3a7bd5, #ff6b6b);
+    }
+
+    .card h3 {
+      font-size: 1.2rem;
+      margin-bottom: 1rem;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card-content {
+      min-height: 100px;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: #d0d0d0;
+    }
+
+    /* Audio Source Card */
+    .audio-card {
+      background: linear-gradient(135deg, rgba(0, 210, 255, 0.1), rgba(58, 123, 213, 0.1));
+    }
+
+    .audio-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 1rem;
+      padding: 0.5rem 1rem;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      margin-top: 0.5rem;
+    }
+
+    /* Transcript Card */
+    .transcript-card {
+      background: linear-gradient(135deg, rgba(0, 200, 81, 0.1), rgba(0, 255, 65, 0.1));
+    }
+
+    .transcript-content {
+      background: rgba(0, 0, 0, 0.2);
+      padding: 1rem;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      min-height: 60px;
+      border-left: 3px solid #00c851;
+    }
+
+    /* Answer Card */
+    .answer-card {
+      background: linear-gradient(135deg, rgba(255, 107, 107, 0.1), rgba(255, 68, 68, 0.1));
+      grid-column: 1 / -1;
+    }
+
+    .answer-content {
+      background: rgba(0, 0, 0, 0.2);
+      padding: 1rem;
+      border-radius: 8px;
+      min-height: 120px;
+      border-left: 3px solid #ff6b6b;
+    }
+
+    .answer-content p {
+      margin: 0.5rem 0;
+    }
+
+    .answer-content strong {
+      color: #00d2ff;
+      font-weight: 600;
+    }
+
+    /* Loading animation */
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: #00d2ff;
+      animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Typing indicator */
+    .typing-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      color: #a0a0a0;
+      font-style: italic;
+    }
+
+    .typing-dots {
+      display: flex;
+      gap: 0.25rem;
+    }
+
+    .typing-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #00d2ff;
+      animation: typing 1.4s infinite;
+    }
+
+    .typing-dot:nth-child(1) { animation-delay: 0s; }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes typing {
+      0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+      30% { opacity: 1; transform: scale(1); }
+    }
+
+    /* Streaming text animation */
+    .answer-content p {
+      animation: fadeIn 0.3s ease-in;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Status indicators */
+    .status-indicator {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 0.5rem;
+    }
+
+    .status-recording { background: #ff4444; animation: pulse 1.5s infinite; }
+    .status-ready { background: #00c851; }
+    .status-thinking { background: #ffa500; animation: pulse 1.5s infinite; }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+      .container {
+        padding: 1rem;
+      }
+      
+      .header h1 {
+        font-size: 2rem;
+      }
+      
+      .control-panel {
+        flex-direction: column;
+        align-items: center;
+      }
+      
+      .btn {
+        width: 100%;
+        max-width: 200px;
+      }
+      
+      .cards-grid {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body>
-  <h1>🎧 VoxAI</h1>
-  <button id="startBtn">Start</button>
-  <button id="stopBtn">Stop</button>
-  <button id="askBtn" disabled>Ask AI</button>
+  <div class="container">
+    <div class="header">
+      <h1>🎧 VoxAI</h1>
+      <p>Your Intelligent Voice Assistant</p>
+    </div>
 
-  <div class="card">
-    <h3>Transcript</h3>
-    <div id="transcript">...</div>
-  </div>
-  <div class="card">
-    <h3>Answer</h3>
-    <div id="answer">Waiting for input…</div>
+    <div class="control-panel">
+      <button id="startBtn" class="btn btn-start">
+        <span class="status-indicator status-ready"></span>
+        Start Recording
+      </button>
+      <button id="stopBtn" class="btn btn-stop">
+        Stop Recording
+      </button>
+      <button id="askBtn" class="btn btn-ask" disabled>
+        Ask AI
+      </button>
+    </div>
+
+    <div class="cards-grid">
+      <div class="card audio-card">
+        <h3>🎤 Audio Source</h3>
+        <div class="card-content">
+          <div id="audioSource" class="audio-status">
+            <div class="loading"></div>
+            Detecting audio devices...
+          </div>
+        </div>
+      </div>
+
+      <div class="card transcript-card">
+        <h3>📝 Transcript</h3>
+        <div class="card-content">
+          <div id="transcript" class="transcript-content">
+            Ready to transcribe your voice...
+          </div>
+        </div>
+      </div>
+
+      <div class="card answer-card">
+        <h3>🤖 AI Response</h3>
+        <div class="card-content">
+          <div id="answer" class="answer-content">
+            Waiting for your question...
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
 <script>
   const { ipcRenderer } = require('electron');
 
   // --- DOM --------------------------------------------------------------
-  const startBtn   = document.getElementById('startBtn');
-  const stopBtn    = document.getElementById('stopBtn');
-  const askBtn     = document.getElementById('askBtn');
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const askBtn = document.getElementById('askBtn');
+  const audioSource = document.getElementById('audioSource');
   const transcript = document.getElementById('transcript');
   const answerRoot = document.getElementById('answer');
 
   // --- UI state ---------------------------------------------------------
   let recording = false;
-  let awaiting  = false;
-  let currentP  = null;       // <p> element we’re appending to
+  let awaiting = false;
+  let currentP = null;
 
   function updateButtons() {
-    startBtn.classList.toggle('active', recording);
-    stopBtn .classList.toggle('active', !recording && !awaiting);
-    askBtn.disabled = awaiting || !transcript.textContent.trim();
+    const startIndicator = startBtn.querySelector('.status-indicator');
+    const startText = startBtn.querySelector('span:not(.status-indicator)') || startBtn.childNodes[1];
+    
+    if (recording) {
+      startBtn.classList.add('active');
+      startIndicator.className = 'status-indicator status-recording';
+      startBtn.innerHTML = '<span class="status-indicator status-recording"></span>Recording...';
+    } else {
+      startBtn.classList.remove('active');
+      startIndicator.className = 'status-indicator status-ready';
+      startBtn.innerHTML = '<span class="status-indicator status-ready"></span>Start Recording';
+    }
+    
+    stopBtn.classList.toggle('active', !recording && !awaiting);
+    askBtn.disabled = awaiting || !transcript.textContent.trim() || transcript.textContent === 'Ready to transcribe your voice...';
+    
+    if (awaiting) {
+      askBtn.innerHTML = '<div class="loading"></div>Thinking...';
+    } else {
+      askBtn.innerHTML = 'Ask AI';
+    }
   }
 
   // --- helpers ----------------------------------------------------------
-  function startNewParagraph(rawLine) {
-    const clean = rawLine                 // remove "- " and any ** … **
-      .replace(/^[-•]\s*/, '')
-      .replace(/\*\*/g, '')
-      .trim();
-
-    const idx   = clean.indexOf(':');
-    const title = idx > -1 ? clean.slice(0, idx).trim() : clean;
-    const body  = idx > -1 ? clean.slice(idx + 1).trim() : '';
-
-    const p     = document.createElement('p');
-    const strong = document.createElement('strong');
-    strong.textContent = title + ':';
-    p.appendChild(strong);
-
-    if (body) p.appendChild(document.createTextNode(' ' + body));
-    answerRoot.appendChild(p);
-    return p;
+  function appendTextToResponse(text) {
+    // Handle headings (## format)
+    if (text.trim().startsWith('## ')) {
+      const heading = document.createElement('h4');
+      heading.textContent = text.replace(/^## /, '').trim();
+      heading.style.color = '#00d2ff';
+      heading.style.marginTop = '1.5rem';
+      heading.style.marginBottom = '0.5rem';
+      heading.style.fontSize = '1.1rem';
+      heading.style.fontWeight = '600';
+      answerRoot.appendChild(heading);
+      return;
+    }
+    
+    // Handle bullet points (• format)
+    if (text.trim().startsWith('• ')) {
+      const li = document.createElement('li');
+      li.textContent = text.replace(/^• /, '').trim();
+      li.style.marginBottom = '0.5rem';
+      li.style.lineHeight = '1.6';
+      
+      // Find or create current ul
+      let currentUl = answerRoot.querySelector('ul:last-child');
+      if (!currentUl || currentUl.classList.contains('complete')) {
+        currentUl = document.createElement('ul');
+        currentUl.style.marginLeft = '1rem';
+        currentUl.style.marginBottom = '1rem';
+        currentUl.style.paddingLeft = '1rem';
+        answerRoot.appendChild(currentUl);
+      }
+      
+      currentUl.appendChild(li);
+      answerRoot.scrollTop = answerRoot.scrollHeight;
+      return;
+    }
+    
+    // Handle regular text
+    let currentParagraph = answerRoot.querySelector('p:last-child');
+    if (!currentParagraph || currentParagraph.classList.contains('complete')) {
+      currentParagraph = document.createElement('p');
+      currentParagraph.style.margin = '0.5rem 0';
+      currentParagraph.style.lineHeight = '1.6';
+      answerRoot.appendChild(currentParagraph);
+    }
+    
+    // Add the text
+    currentParagraph.appendChild(document.createTextNode(text));
+    
+    // Auto-scroll to bottom
+    answerRoot.scrollTop = answerRoot.scrollHeight;
+  }
+  
+  function startNewParagraph() {
+    const currentParagraph = answerRoot.querySelector('p:last-child');
+    const currentUl = answerRoot.querySelector('ul:last-child');
+    
+    if (currentParagraph) {
+      currentParagraph.classList.add('complete');
+    }
+    if (currentUl) {
+      currentUl.classList.add('complete');
+    }
+    // Next text will create a new element
   }
 
   // --- button events ----------------------------------------------------
   startBtn.onclick = () => {
     if (recording) return;
     recording = true;
+    transcript.textContent = 'Recording... Speak now!';
     ipcRenderer.send('to-python', 'START');
     updateButtons();
   };
@@ -263,14 +505,24 @@
   stopBtn.onclick = () => {
     if (!recording) return;
     recording = false;
+    transcript.textContent = 'Processing recording...';
     ipcRenderer.send('to-python', 'STOP');
     updateButtons();
   };
 
   askBtn.onclick = () => {
     if (awaiting) return;
-    awaiting  = true;
-    answerRoot.textContent = '';          // clear old answer
+    awaiting = true;
+    answerRoot.innerHTML = `
+      <div class="typing-indicator">
+        <span>VoxAI is thinking</span>
+        <div class="typing-dots">
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+        </div>
+      </div>
+    `;
     currentP = null;
     ipcRenderer.send('to-python', 'ASK::');
     updateButtons();
@@ -279,9 +531,32 @@
   // --- streaming from Python -------------------------------------------
   ipcRenderer.on('from-python', (_, raw) => {
 
+    // Audio device info
+    if (raw.startsWith('AUDIO_DEVICE::')) {
+      const [deviceName, sourceType, platform] = raw.slice(14).split('|');
+      const sourceIcon = sourceType === 'system_audio' ? '🔊' : '🎤';
+      const platformIcon = platform === 'darwin' ? '🍎' : platform === 'windows' ? '🪟' : '🐧';
+      
+      if (deviceName === 'No System Audio Found') {
+        audioSource.innerHTML = `
+          <div style="color: #ffa500;">
+            ⚠️ No System Audio Device Found
+            <br><small>Please set up audio loopback:</small>
+            <br><small>macOS: Install BlackHole and set as input</small>
+            <br><small>Windows: Use WASAPI loopback</small>
+            <br><small>Linux: Use PulseAudio monitor</small>
+          </div>
+        `;
+      } else {
+        audioSource.innerHTML = `${sourceIcon} ${deviceName} <br><small>(${sourceType}) ${platformIcon}</small>`;
+      }
+      return;
+    }
+
     // Transcript arrives once
     if (raw.startsWith('TRANSCRIBED::')) {
-      transcript.textContent = raw.slice(13);
+      const transcriptText = raw.slice(13);
+      transcript.textContent = transcriptText || 'No speech detected. Try again.';
       updateButtons();
       return;
     }
@@ -290,28 +565,81 @@
     if (!raw.startsWith('CHUNK::')) return;
     const chunk = raw.slice(7);
 
-    if (chunk === '[END]') {              // finished
+    if (chunk === '[END]') {
       awaiting = false;
       updateButtons();
       return;
     }
-    if (chunk === '[THINKING]') return;   // optional placeholder
+    
+    if (chunk === '[THINKING]') {
+      answerRoot.innerHTML = `
+        <div class="typing-indicator">
+          <span>VoxAI is thinking</span>
+          <div class="typing-dots">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+          </div>
+        </div>
+      `;
+      return;
+    }
 
-    // Split chunk into logical lines
-    chunk.split(/\n/).forEach(line => {
-      if (!line.trim()) return;
+    // Handle error messages
+    if (chunk.startsWith('[ERROR]')) {
+      answerRoot.innerHTML = `<p style="color: #ff6b6b;">❌ ${chunk.slice(7)}</p>`;
+      awaiting = false;
+      updateButtons();
+      return;
+    }
 
-      if (line.startsWith('-')) {
-        // New category bullet
-        currentP = startNewParagraph(line);
-      } else if (currentP) {
-        // Continuation → append to same <p>
-        currentP.append(' ' + line.replace(/\*\*/g, '').trim());
-      } else {
-        // Fallback (shouldn’t really happen)
-        currentP = startNewParagraph('- ' + line);
+    // Handle safety filter
+    if (chunk === '[SAFETY_FILTER]') {
+      answerRoot.innerHTML = '<p style="color: #ffa500;">⚠️ Response filtered for safety. Please try rephrasing your question.</p>';
+      awaiting = false;
+      updateButtons();
+      return;
+    }
+
+    // Handle fallback mode
+    if (chunk === '[FALLBACK]') {
+      answerRoot.innerHTML = `
+        <div class="typing-indicator">
+          <span>Retrying with fallback mode</span>
+          <div class="typing-dots">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    // Handle recovery mode
+    if (chunk === '[RECOVERING]') {
+      answerRoot.innerHTML = `
+        <div class="typing-indicator">
+          <span>Recovering chat session</span>
+          <div class="typing-dots">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    // Stream text naturally (like ChatGPT)
+    if (chunk.trim()) {
+      appendTextToResponse(chunk);
+      
+      // If chunk ends with double newline, start new paragraph
+      if (chunk.endsWith('\n\n')) {
+        startNewParagraph();
       }
-    });
+    }
   });
 
   updateButtons();

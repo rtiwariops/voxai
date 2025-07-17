@@ -12,26 +12,49 @@ Prerequisites
 
      npm install -g electron
 
-- **macOS Audio Loopback (BlackHole 2ch + Ladiocast)**:
+**That's it!** VoxAI automatically installs Electron dependencies on first run.
 
-  1. **Install BlackHole 2ch**::
+**Important:** VoxAI captures system audio only (meetings, browser, apps) - no external microphone.
 
-       brew install blackhole-2ch
+System Audio Setup
+------------------
 
-  2. **Create a Multi-Output Device**  
-     - Open **Audio MIDI Setup**  
-     - Click “+” → **Create Multi-Output Device**  
-     - Check both **BlackHole 2ch** and **MacBook Pro Speakers**
+VoxAI captures **computer audio only** (no microphone) - perfect for meeting recordings, browser audio, and app sounds without room noise.
 
-  3. **Select Multi-Output Device**  
-     System Preferences → Sound → Output → **Multi-Output Device**
+macOS Setup
+^^^^^^^^^^^
 
-  4. **Configure Ladiocast**  
-     - **Input 1**: **BlackHole 2ch** → route to **Main**  
-     - **Main Output**: **MacBook Pro Speakers**  
-     - Mute other channels
+.. code-block:: bash
 
-  This will route all system and microphone audio into VoxAI.
+   # 1. Install BlackHole
+   brew install blackhole-2ch
+
+   # 2. Install Ladiocast
+   # Download from: https://existential.audio/ladiocast/
+
+**Configure Ladiocast:**
+
+1. **Input 1**: Set to your audio source (Built-in Input or system audio)
+2. **Main**: Route Input 1 to Main (for speakers)
+3. **Aux 1**: Set to BlackHole 2ch
+4. **Enable**: Route Input 1 to Aux 1
+
+**System Settings:**
+
+- **Input**: BlackHole 2ch (VoxAI reads from here)
+- **Output**: Built-in Output (you hear from here)
+
+Windows (Built-in)
+^^^^^^^^^^^^^^^^^^
+
+WASAPI loopback support is built into Windows 10+ - VoxAI will auto-detect.
+
+Linux (Built-in)
+^^^^^^^^^^^^^^^^
+
+PulseAudio monitor devices are auto-detected - no setup needed.
+
+**Result:** You hear audio through speakers + VoxAI captures clean computer audio.
 
 Install & Run
 -------------

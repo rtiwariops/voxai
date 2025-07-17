@@ -6,18 +6,22 @@
 
 ## 🚀 Features
 
-- **Universal Audio Capture**  
-  Record mic, system audio, or any combination via BlackHole (macOS) or equivalent loopback drivers.  
-- **Manual Control**  
+- **🎧 System Audio Capture**  
+  Captures clean audio from your computer (meetings, browser, apps) - no external microphone noise or room interference.
+- **🎮 Manual Control**  
   Start/Stop buttons let you define exactly the boundaries of your prompt—perfect for long, multi-sentence queries.  
-- **One-Shot Transcription**  
+- **🔄 One-Shot Transcription**  
   Whisper processes the entire recording in a single call—no fragmented sentences.  
-- **Live AI Streaming**  
-  Gemini’s response appears token by token, just like in ChatGPT’s streaming interface.  
-- **Configurable Model**  
+- **⚡ Live AI Streaming**  
+  ChatGPT-like streaming responses with structured formatting, headings, and bullet points.  
+- **🎯 Principal Engineer Level Responses**  
+  Technical explanations at senior engineering level with architecture insights and business implications.
+- **🔧 Configurable Model**  
   Swap between Gemini variants via environment (no code changes).  
-- **Zero-Install UI Bootstrapping**  
-  On first run `voxai` auto-installs the minimal Electron UI source—included in the PyPI package—so you only ever need `pip install voxai` and `voxai`.  
+- **🚀 Zero-Install UI Bootstrapping**  
+  On first run `voxai` auto-installs Electron dependencies—included in the PyPI package—so you only ever need `pip install voxai` and `voxai`.
+- **🎨 Modern UI**  
+  Beautiful gradient interface with real-time status indicators, typing animations, and professional styling.  
 
 ---
 
@@ -26,31 +30,11 @@
 ## ⚙️ Prerequisites
 
 - **Python ≥3.7**  
-- **Node.js ≥14**  
-- **Electron** (global)  
-  ```bash
-  npm install -g electron
+- **Node.js ≥14** (for Electron UI)
 
-- **macOS Audio Loopback (BlackHole 2ch + Ladiocast)**:
-    
-   1. **Install BlackHole 2ch**::
+**That's it!** VoxAI automatically installs Electron dependencies on first run.
 
-       brew install blackhole-2ch
-
-  2. **Create a Multi-Output Device**  
-     - Open **Audio MIDI Setup**  
-     - Click “+” → **Create Multi-Output Device**  
-     - Check both **BlackHole 2ch** and **MacBook Pro Speakers**
-
-  3. **Select Multi-Output Device**  
-     System Preferences → Sound → Output → **Multi-Output Device**
-
-  4. **Configure Ladiocast**  
-     - **Input 1**: **BlackHole 2ch** → route to **Main**  
-     - **Main Output**: **MacBook Pro Speakers**  
-     - Mute other channels
-
-  This will route all system and microphone audio into VoxAI.
+**Important:** VoxAI captures system audio only (meetings, browser, apps) - no external microphone.
 
 ## Install & Run
 ### 1) Install from PyPI
@@ -88,17 +72,28 @@ Copy & Share: Everything is plain text—copy it, paste it, or feed it into your
 
 ## 🎧 How It Works
 
-- **Start Recording**  
-  Click **Start** to capture audio from your input device (e.g., BlackHole).
+- **🎤 Audio Source Detection**  
+  VoxAI automatically detects your system audio setup and displays it in the beautiful UI with real-time status.
 
-- **Stop & Transcribe**  
-  Click **Stop**. Whisper transcribes and shows the full audio clip under **Transcript**.
+- **🎬 Start Recording**  
+  Click **Start Recording** to capture clean audio from your computer (meetings, browser, apps).
 
-- **Ask AI**  
-  Click **Ask AI** to send the transcript to Gemini. Answers stream live in the **Answer** panel.
+- **✋ Stop & Transcribe**  
+  Click **Stop Recording**. Whisper transcribes the entire audio clip and shows it under **Transcript**.
 
-- **Copy & Share**  
-  Output is plain text—reuse it in RAG/finetune workflows or anywhere else.
+- **🤖 Ask AI**  
+  Click **Ask AI** to send the transcript to Gemini. Get ChatGPT-like streaming responses with structured formatting.
+
+- **📋 Copy & Share**  
+  Professional responses with headings, bullet points, and technical depth—perfect for documentation or sharing.
+
+## 🎨 Modern UI Features
+
+- **🌈 Beautiful Design**: Gradient backgrounds with glassmorphism effects
+- **💫 Real-time Animations**: Typing indicators, loading states, and smooth transitions  
+- **📊 Status Indicators**: Color-coded status dots (🟢 ready, 🔴 recording, 🟡 thinking)
+- **📱 Responsive Layout**: Works perfectly on different screen sizes
+- **🎯 Professional Formatting**: AI responses with headings, bullets, and technical structure
 
 ---
 
@@ -128,9 +123,42 @@ npm install -g electron
 
 voxai
 
+## 🔧 System Audio Setup
+
+VoxAI captures **computer audio only** (no microphone) - perfect for meeting recordings, browser audio, and app sounds without room noise.
+
+### macOS Setup
+```bash
+# 1. Install BlackHole
+brew install blackhole-2ch
+
+# 2. Install Ladiocast
+# Download from: https://existential.audio/ladiocast/
+```
+
+**Configure Ladiocast:**
+1. **Input 1**: Set to your audio source (Built-in Input or system audio)
+2. **Main**: Route Input 1 to Main (for speakers)
+3. **Aux 1**: Set to BlackHole 2ch
+4. **Enable**: Route Input 1 to Aux 1
+
+**System Settings:**
+- **Input**: BlackHole 2ch (VoxAI reads from here)
+- **Output**: Built-in Output (you hear from here)
+
+### Windows (Built-in)
+WASAPI loopback support is built into Windows 10+ - VoxAI will auto-detect.
+
+### Linux (Built-in)
+PulseAudio monitor devices are auto-detected - no setup needed.
+
+**Result:** You hear audio through speakers + VoxAI captures clean computer audio.
+
+---
+
 ## ⚙️ Features
 
-- Universal Audio Capture (BlackHole, etc.)
+- Smart Cross-Platform Audio Detection
 - Manual Control for long-form Q&A
 - One-Shot, Full-Clip Transcription
 - Live Token-by-Token AI Streaming

@@ -7,8 +7,8 @@ long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="voxai",
-    version="0.2.17",
-    description="Voice-driven AI assistant for real-time transcription and Gemini integration.",
+    version="0.3.0",
+    description="Voice-driven AI assistant with modern UI, system audio capture, and ChatGPT-like streaming responses.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Ravi (Robbie) Tiwari",
@@ -45,7 +45,10 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
+        "Topic :: Multimedia :: Sound/Audio :: Capture/Recording",
+        "Topic :: Software Development :: User Interfaces",
         "Intended Audience :: Developers",
+        "Intended Audience :: End Users/Desktop",
     ],
     python_requires='>=3.7',
 )
