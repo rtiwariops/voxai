@@ -297,6 +297,27 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
+    /* Custom bullet points */
+    .answer-content ul {
+      list-style: none;
+      padding-left: 0;
+      margin: 0.5rem 0;
+    }
+
+    .answer-content li {
+      position: relative;
+      padding-left: 1.5rem;
+      margin-bottom: 0.5rem;
+      line-height: 1.6;
+    }
+
+    .answer-content li::before {
+      content: '🔹';
+      position: absolute;
+      left: 0;
+      color: #00d2ff;
+    }
+
     /* Status indicators */
     .status-indicator {
       display: inline-block;
@@ -442,20 +463,27 @@
       return;
     }
     
-    // Handle bullet points (• format)
-    if (text.trim().startsWith('• ')) {
+    // Handle bullet points (• or 🔹 format)
+    if (text.trim().startsWith('• ') || text.trim().startsWith('🔹 ')) {
       const li = document.createElement('li');
-      li.textContent = text.replace(/^• /, '').trim();
+      li.textContent = text.replace(/^[•🔹] /, '').trim();
       li.style.marginBottom = '0.5rem';
       li.style.lineHeight = '1.6';
+      li.style.listStyleType = 'none';
+      li.style.position = 'relative';
+      li.style.paddingLeft = '1.5rem';
+      
+      // Add custom bullet
+      li.style.setProperty('--bullet', text.trim().startsWith('🔹') ? '🔹' : '•');
+      li.style.setProperty('&::before', 'content: var(--bullet); position: absolute; left: 0; color: #00d2ff;');
       
       // Find or create current ul
       let currentUl = answerRoot.querySelector('ul:last-child');
       if (!currentUl || currentUl.classList.contains('complete')) {
         currentUl = document.createElement('ul');
-        currentUl.style.marginLeft = '1rem';
+        currentUl.style.marginLeft = '0';
         currentUl.style.marginBottom = '1rem';
-        currentUl.style.paddingLeft = '1rem';
+        currentUl.style.paddingLeft = '0';
         answerRoot.appendChild(currentUl);
       }
       
@@ -633,10 +661,26 @@
 
     // Stream text naturally (like ChatGPT)
     if (chunk.trim()) {
+      // Handle special sections
+      if (chunk.trim() === 'Key features:') {
+        startNewParagraph();
+        const sectionHeader = document.createElement('p');
+        sectionHeader.textContent = 'Key features:';
+        sectionHeader.style.fontWeight = '600';
+        sectionHeader.style.color = '#00d2ff';
+        sectionHeader.style.margin = '1rem 0 0.5rem 0';
+        answerRoot.appendChild(sectionHeader);
+        return;
+      }
+      
       appendTextToResponse(chunk);
       
-      // If chunk ends with double newline, start new paragraph
-      if (chunk.endsWith('\n\n')) {
+      // If chunk ends with colon, likely a section header
+      if (chunk.trim().endsWith(':')) {
+        startNewParagraph();
+      }
+      // If chunk ends with period and next would be bullet, prepare for list
+      else if (chunk.trim().endsWith('.') && chunk.length < 200) {
         startNewParagraph();
       }
     }

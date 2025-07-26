@@ -29,46 +29,33 @@ if not API_KEY:
 genai.configure(api_key=API_KEY)
 
 SYSTEM_PROMPT = f"""
-You are a **Senior Principal Engineer** providing technical guidance to engineering leadership.
+You are a **Senior Principal Engineer** providing concise technical guidance.
 
 **Response Format:**
-- Lead with a concise executive summary
-- Follow with structured technical breakdown using bullet points
-- Include architectural insights and trade-offs
-- Provide implementation considerations
-- End with business/strategic implications when relevant
+- Start with 1-2 sentence definition/overview
+- Add a blank line
+- Write "Key features:" on its own line
+- Follow with 4-6 bullet points using 🔹 emoji, each on a separate line
+- Add a blank line
+- End with 1 sentence about ideal use cases
 
-**Technical Depth:**
-- Explain at Principal Engineer / VP Engineering level
-- Include system design considerations
-- Discuss scalability, performance, and operational aspects
-- Mention relevant technologies, frameworks, and best practices
-- Address both technical and business implications
+**Style:**
+- Be direct and concise
+- Use technical terminology appropriately
+- Focus on key features and benefits
+- No lengthy explanations or detailed examples
+- IMPORTANT: Put each bullet point on its own line with line breaks
 
-**Structure Example:**
-Brief intro paragraph, then:
+**Example Structure:**
+[Service/Technology] is [brief definition]. [Key benefit or purpose].
 
-## Key Components
-• Component 1: Technical details and purpose
-• Component 2: How it works and benefits
-• Component 3: Integration points and considerations
+Key features:
+🔹 Feature 1: Brief description
+🔹 Feature 2: Brief description  
+🔹 Feature 3: Brief description
+🔹 Feature 4: Brief description
 
-## Architecture & Design
-• System design principles
-• Scalability considerations
-• Performance characteristics
-
-## Implementation Details
-• Technical specifications
-• Integration requirements
-• Operational considerations
-
-## Business Impact
-• Strategic advantages
-• Cost implications
-• Risk factors
-
-Use this structured approach for all technical explanations.
+Ideal for [primary use cases].
 
 Current date: {date.today():%Y-%m-%d}
 """.strip()
@@ -82,7 +69,18 @@ chat = genai.GenerativeModel(MODEL,
 logger.info(f"STATUS:: Chat started with model '{MODEL}'")
 
 # ────────── WHISPER AUDIO SETUP ──────────────────────────────────────────────
-whisper = WhisperModel("base", compute_type="int8")
+# Use tiny model for faster transcription with GPU acceleration if available
+try:
+    whisper = WhisperModel("tiny", compute_type="float16", device="cuda")
+    logger.info("STATUS:: Using Whisper tiny model with CUDA acceleration")
+except:
+    try:
+        whisper = WhisperModel("tiny", compute_type="int8", device="cpu")
+        logger.info("STATUS:: Using Whisper tiny model with CPU (int8)")
+    except:
+        whisper = WhisperModel("base", compute_type="int8", device="cpu")
+        logger.info("STATUS:: Fallback to Whisper base model")
+
 SR, CH, BS = 16000, 1, 4000
 
 def detect_audio_devices():
@@ -183,7 +181,19 @@ def stop_and_transcribe():
         return
 
     samples = np.concatenate(chunks, axis=0)[:, 0].astype(np.float32)
-    segs, _  = whisper.transcribe(samples, language="en", beam_size=1)
+    
+    # Optimized transcription settings for speed
+    segs, _ = whisper.transcribe(
+        samples, 
+        language="en", 
+        beam_size=1,           # Fastest beam search
+        temperature=0.0,       # No randomness for speed
+        compression_ratio_threshold=2.4,  # Skip low-quality audio
+        log_prob_threshold=-1.0,          # Accept more transcriptions
+        no_speech_threshold=0.6,          # Skip silence faster
+        condition_on_previous_text=False, # Don't wait for context
+        word_timestamps=False             # Skip word timing for speed
+    )
     last_txt = " ".join(s.text.strip() for s in segs).strip()
     logger.info(f"TRANSCRIBED::{last_txt}")
 
@@ -220,25 +230,33 @@ def _stream_live(prompt: str):
             accumulated_text += chunk
             word_buffer += chunk
             
-            # Stream by sentences for better readability
-            sentences = re.split(r'([.!?]+\s+)', word_buffer)
+            # Stream by lines first, then sentences for better readability
+            if '\n' in word_buffer:
+                lines = word_buffer.split('\n')
+                for line in lines[:-1]:  # Send all complete lines
+                    if line.strip():
+                        logger.info(f"CHUNK::{line}")
+                word_buffer = lines[-1]  # Keep the last incomplete line
             
-            if len(sentences) > 1:
-                # We have at least one complete sentence
-                for i in range(0, len(sentences) - 1, 2):  # Process pairs (sentence + delimiter)
-                    if i + 1 < len(sentences):
-                        complete_sentence = sentences[i] + sentences[i + 1]
-                        if complete_sentence.strip():
-                            logger.info(f"CHUNK::{complete_sentence.strip()}")
-                
-                # Keep the last incomplete sentence in buffer
-                word_buffer = sentences[-1] if sentences else ""
+            # Then stream by sentences
+            elif any(punct in word_buffer for punct in ['. ', '! ', '? ']):
+                sentences = re.split(r'([.!?]+\s+)', word_buffer)
+                if len(sentences) > 1:
+                    # We have at least one complete sentence
+                    for i in range(0, len(sentences) - 1, 2):  # Process pairs (sentence + delimiter)
+                        if i + 1 < len(sentences):
+                            complete_sentence = sentences[i] + sentences[i + 1]
+                            if complete_sentence.strip():
+                                logger.info(f"CHUNK::{complete_sentence}")
+                    
+                    # Keep the last incomplete sentence in buffer
+                    word_buffer = sentences[-1] if sentences else ""
             
-            # Also stream by meaningful chunks (every ~20 characters)
-            elif len(word_buffer) > 20 and (' ' in word_buffer[-10:]):
+            # Also stream by meaningful chunks (every ~30 characters)
+            elif len(word_buffer) > 30 and (' ' in word_buffer[-15:]):
                 # Find last space to avoid breaking words
                 last_space = word_buffer.rfind(' ')
-                if last_space > 10:
+                if last_space > 15:
                     chunk_to_send = word_buffer[:last_space + 1]
                     logger.info(f"CHUNK::{chunk_to_send}")
                     word_buffer = word_buffer[last_space + 1:]

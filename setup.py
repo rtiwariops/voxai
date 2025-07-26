@@ -7,7 +7,7 @@ long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="voxai",
-    version="0.3.0",
+    version="0.3.1",
     description="Voice-driven AI assistant with modern UI, system audio capture, and ChatGPT-like streaming responses.",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -38,6 +38,7 @@ setup(
             "electron/package.json",
             "electron/main.js",
             "electron/index.html",
+            "electron/icon.png",
         ],
     },
     classifiers=[

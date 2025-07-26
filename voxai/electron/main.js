@@ -12,10 +12,18 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
+    icon: path.join(__dirname, 'icon.png'), // VoxAI app icon
+    title: 'VoxAI - Voice AI Assistant',
+    show: false, // Don't show until ready
     webPreferences: {
       nodeIntegration: true,      // allow require('electron') in renderer
       contextIsolation: false,    // so ipcRenderer works
     }
+  });
+
+  // Show window when ready to load
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
   });
 
   // Load our index.html (renderer) file.
@@ -90,7 +98,13 @@ function createWindow() {
 }
 
 // 7) When Electron has finished initialization, create the window.
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // Set dock icon on macOS
+  if (process.platform === 'darwin') {
+    app.dock.setIcon(path.join(__dirname, 'icon.png'));
+  }
+  createWindow();
+});
 
 // 8) Quit the app when all windows are closed (except on macOS).
 app.on('window-all-closed', () => {
