@@ -12,9 +12,10 @@
     }
 
     body {
-      background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
-      color: #e8e8e8;
+      background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 50%, #3a3a3a 100%);
+      color: #ffffff;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-size: 16px;
       min-height: 100vh;
       overflow-x: hidden;
     }
@@ -146,9 +147,9 @@
     }
 
     .card {
-      background: rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.08);
       backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
       border-radius: 16px;
       padding: 1.5rem;
       transition: all 0.3s ease;
@@ -183,9 +184,10 @@
 
     .card-content {
       min-height: 100px;
-      font-size: 0.95rem;
-      line-height: 1.6;
-      color: #d0d0d0;
+      font-size: 1.1rem;
+      line-height: 1.8;
+      color: #f5f5f5;
+      font-weight: 400;
     }
 
     /* Audio Source Card */
@@ -210,12 +212,15 @@
     }
 
     .transcript-content {
-      background: rgba(0, 0, 0, 0.2);
+      background: rgba(255, 255, 255, 0.1);
       padding: 1rem;
       border-radius: 8px;
-      font-family: 'Courier New', monospace;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 500;
       min-height: 60px;
       border-left: 3px solid #00c851;
+      color: #ffffff;
     }
 
     /* Answer Card */
@@ -225,15 +230,22 @@
     }
 
     .answer-content {
-      background: rgba(0, 0, 0, 0.2);
-      padding: 1rem;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 1.5rem;
       border-radius: 8px;
       min-height: 120px;
       border-left: 3px solid #ff6b6b;
+      font-size: 1.1rem;
+      line-height: 1.8;
+      color: #ffffff;
+      font-weight: 400;
     }
 
     .answer-content p {
       margin: 0.5rem 0;
+      font-size: 1.1rem;
+      line-height: 1.8;
+      color: #ffffff;
     }
 
     .answer-content strong {

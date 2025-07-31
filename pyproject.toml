@@ -4,14 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voxai"
-version = "0.3.1"
+version = "0.3.3"
 description = "Voice-driven AI assistant with modern UI, system audio capture, and ChatGPT-like streaming responses."
 readme = "README.md"
+license = {text = "MIT"}
 authors = [
     {name = "Ravi (Robbie) Tiwari", email = "rtiwariops@gmail.com"}
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Multimedia :: Sound/Audio :: Capture/Recording",
@@ -36,6 +38,9 @@ Repository = "https://github.com/rtiwariops/voxai"
 [project.scripts]
 voxai = "voxai.cli:main"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 include = ["voxai*"]
 
@@ -43,6 +48,7 @@ include = ["voxai*"]
 voxai = [
     "electron/package.json",
     "electron/main.js",
+    "electron/preload.js", 
     "electron/index.html",
     "electron/icon.png",
 ]

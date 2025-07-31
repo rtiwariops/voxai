@@ -30,7 +30,9 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
   // 2) Spawn the Python backend with unbuffered output (−u).
-  pyProcess = spawn('python3', ['-u', '-m', 'voxai.core'], {
+  // Use the same Python executable that launched the CLI
+  const pythonExecutable = process.env.VOXAI_PYTHON_EXE || 'python3';
+  pyProcess = spawn(pythonExecutable, ['-u', '-m', 'voxai.core'], {
     cwd: __dirname,
     env: process.env,
   });
