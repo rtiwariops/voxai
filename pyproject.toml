@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voxai"
-version = "0.3.3"
-description = "Voice-driven AI assistant with modern UI, system audio capture, and ChatGPT-like streaming responses."
+version = "0.4.0"
+description = "Voice-driven AI assistant with OpenAI GPT-4o integration, interview-style responses, and enhanced UI."
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
@@ -24,7 +24,7 @@ classifiers = [
 dependencies = [
     "sounddevice",
     "faster_whisper",
-    "google-generativeai",
+    "openai",
     "python-dotenv"
 ]
 requires-python = ">=3.7"

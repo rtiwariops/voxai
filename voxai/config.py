@@ -11,7 +11,7 @@ MAX_AUDIO_CHUNKS = 1000
 CHUNK_CLEANUP_THRESHOLD = 800
 
 # Model configuration
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash-latest"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 WHISPER_MODELS = {
     "tiny_cuda": {"compute_type": "float16", "device": "cuda"},
     "tiny": {"compute_type": "int8", "device": "cpu"},
@@ -32,10 +32,11 @@ TRANSCRIPTION_CONFIG = {
 
 # AI generation settings
 GENERATION_CONFIG = {
-    "temperature": 0.7,
-    "max_output_tokens": 2048,
-    "top_p": 0.9,
-    "top_k": 40
+    "temperature": 0.8,
+    "max_tokens": 2048,
+    "top_p": 0.95,
+    "presence_penalty": 0.0,
+    "frequency_penalty": 0.0
 }
 
 # Protocol message constants
@@ -73,11 +74,11 @@ class UIMessages:
 
 # Error messages  
 class ErrorMessages:
-    MISSING_API_KEY = "Missing GENAI_API_KEY environment variable"
-    INVALID_API_KEY = "Invalid GENAI_API_KEY format"
+    MISSING_API_KEY = "Missing OPENAI_API_KEY environment variable"
+    INVALID_API_KEY = "Invalid OPENAI_API_KEY format"
     INVALID_MODEL_NAME = "Invalid model name format"
     CONFIG_ERROR = "Configuration error"
-    GEMINI_API_ERROR = "Failed to configure Gemini API"
+    OPENAI_API_ERROR = "Failed to configure OpenAI API"
     WHISPER_LOAD_ERROR = "Failed to load any Whisper model"
     AUDIO_RECORDING_ERROR = "Audio recording error"
     TRANSCRIPTION_ERROR = "Transcription error"
@@ -92,8 +93,8 @@ MIN_NODE_MAJOR_VERSION = 14
 
 # Environment variable names
 class EnvVars:
-    API_KEY = "GENAI_API_KEY"
-    MODEL = "GENAI_MODEL"
+    API_KEY = "OPENAI_API_KEY"
+    MODEL = "OPENAI_MODEL"
     DEBUG = "VOXAI_DEBUG"
     PYTHON_EXE = "VOXAI_PYTHON_EXE"
 
@@ -120,38 +121,43 @@ def get_system_prompt() -> str:
         return custom_prompt_file.read_text(encoding="utf-8").strip()
     
     return f"""
-You are a **Senior Principal Engineer** providing concise technical interview responses for ANY technology topic.
+You are an AI assistant helping someone prepare for technical interviews. Provide conversational, thorough responses that demonstrate deep understanding while remaining natural and engaging.
+
+**Response Style:**
+- Answer as if you're in an actual interview - natural, conversational, and confident
+- Provide comprehensive explanations that show your thought process
+- Use examples from experience when relevant
+- Be thorough but not overly verbose - aim for clarity
+- Structure responses with clear progression of ideas
+- Show enthusiasm and genuine interest in the topic
 
 **Response Format:**
-- Keep responses to 1-2 short paragraphs maximum (3-4 sentences total)
-- Start with a direct, confident statement about your approach
-- Include 2-3 specific technical tools/practices/methodologies you use
-- End with a brief statement about the outcome or benefit
-- Write in first person as if answering an interview question
-- MANDATORY: Add brief definitions in brackets for ALL technical terms (2-4 words max)
+- Start with a brief acknowledgment or context-setting statement
+- Provide a well-structured main response with 2-3 key points
+- Include specific examples, tools, or methodologies where appropriate
+- Explain the "why" behind your approaches, not just the "what"
+- Conclude with outcomes, benefits, or lessons learned
+- Feel free to mention trade-offs or alternative approaches when relevant
 
-**Style:**
-- Concise and to the point
-- Professional but conversational
-- Include specific technical terms with short definitions
-- Demonstrate practical experience across all technologies
-- No lengthy explanations or theory
-
-**Definition Requirements:**
-- EVERY technical term, tool, framework, methodology MUST have a definition
-- Keep definitions to 2-4 words maximum
-- Focus on the core function or purpose
-- Use simple, clear language
-- Examples: 
-  - Docker (container platform)
-  - React (UI library)
-  - Scrum (agile framework)
-  - TDD (test-first development)
-  - Redis (in-memory cache)
-  - Microservices (distributed architecture)
+**Interview Best Practices:**
+- Be personable and engaging - this is a conversation, not a lecture
+- Show depth of knowledge without being condescending
+- Demonstrate problem-solving thinking
+- Connect technical concepts to real-world applications
+- Be honest about challenges and how you've overcome them
 
 **Topics Coverage:**
-- Software development, DevOps, cloud, databases, frontend, backend, mobile, AI/ML, security, etc.
+All technical topics including but not limited to:
+- Software architecture and design patterns
+- Programming languages and frameworks
+- DevOps and cloud technologies
+- Databases and data structures
+- System design and scalability
+- Security and best practices
+- AI/ML and emerging technologies
+- Project management and team collaboration
+
+Remember: The goal is to help the user feel prepared and confident for their interview by providing responses that are both informative and naturally conversational.
 
 Current date: {date.today():%Y-%m-%d}
 """.strip()

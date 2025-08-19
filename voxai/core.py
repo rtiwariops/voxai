@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# core.py – Whisper ➜ Gemini Flash 2.5, LIVE bullet streaming
-# • heading appears first, each bullet flushes immediately
-# • newline injected before every “- ” even when glued to heading text
-# Updated 2025-06-28 (“bullet_fix” pattern widened)
+# core.py – Whisper → OpenAI GPT-4o, Interview-style streaming responses
+# • Natural conversational responses for interview preparation
+# • Real-time streaming with intelligent chunking
+# Updated for OpenAI integration
 
 import os, sys, logging, threading, time, re, numpy as np, platform
 from datetime import date
@@ -12,11 +12,11 @@ from typing import List, Dict, Any, Tuple, Optional, Union
 import sounddevice as sd
 from faster_whisper import WhisperModel
 from dotenv import load_dotenv
-import google.generativeai as genai
+from openai import OpenAI
 
 from .config import (
     AUDIO_SAMPLE_RATE, AUDIO_CHANNELS, AUDIO_BLOCK_SIZE, MAX_AUDIO_CHUNKS,
-    CHUNK_CLEANUP_THRESHOLD, DEFAULT_GEMINI_MODEL, WHISPER_MODELS,
+    CHUNK_CLEANUP_THRESHOLD, DEFAULT_OPENAI_MODEL, WHISPER_MODELS,
     TRANSCRIPTION_CONFIG, GENERATION_CONFIG, Messages, UIMessages,
     ErrorMessages, MIN_NODE_MAJOR_VERSION, EnvVars, AudioDeviceKeywords,
     STREAMING_CONFIG, get_system_prompt
@@ -64,7 +64,7 @@ def setup_logging() -> logging.Logger:
 
 logger = setup_logging()
 
-# ────────── ENV & GEMINI INIT ────────────────────────────────────────────────
+# ────────── ENV & OPENAI INIT ────────────────────────────────────────────────
 load_dotenv()
 
 def validate_api_key(api_key: str) -> str:
@@ -75,8 +75,8 @@ def validate_api_key(api_key: str) -> str:
     # Basic sanitization - remove whitespace and control characters
     sanitized_key = ''.join(char for char in api_key.strip() if ord(char) >= 32)
     
-    # Basic validation - check format (should start with specific patterns for Google API keys)
-    if not sanitized_key or len(sanitized_key) < 10:
+    # Basic validation - check format (should start with sk- for OpenAI keys)
+    if not sanitized_key or not sanitized_key.startswith('sk-'):
         raise ValueError(ErrorMessages.INVALID_API_KEY)
     
     return sanitized_key
@@ -91,21 +91,24 @@ def validate_model_name(model: str) -> str:
 
 try:
     API_KEY = validate_api_key(os.getenv(EnvVars.API_KEY))
-    MODEL = validate_model_name(os.getenv(EnvVars.MODEL, DEFAULT_GEMINI_MODEL))
-    genai.configure(api_key=API_KEY)
+    MODEL = validate_model_name(os.getenv(EnvVars.MODEL, DEFAULT_OPENAI_MODEL))
+    client = OpenAI(api_key=API_KEY)
 except ValueError as e:
     logger.error(f"{Messages.CHUNK_PREFIX}{Messages.ERROR} {ErrorMessages.CONFIG_ERROR}: {e}")
     logger.error(f"{Messages.CHUNK_PREFIX}{Messages.END}")
     sys.exit(1)
 except Exception as e:
-    logger.error(f"{Messages.CHUNK_PREFIX}{Messages.ERROR} {ErrorMessages.GEMINI_API_ERROR}: {e}")
+    logger.error(f"{Messages.CHUNK_PREFIX}{Messages.ERROR} {ErrorMessages.OPENAI_API_ERROR}: {e}")
     logger.error(f"{Messages.CHUNK_PREFIX}{Messages.END}")
     sys.exit(1)
 
 SYSTEM_PROMPT = get_system_prompt()
 
-chat = genai.GenerativeModel(MODEL,
-                             system_instruction=SYSTEM_PROMPT).start_chat()
+# Initialize conversation history
+conversation_history = [
+    {"role": "system", "content": SYSTEM_PROMPT}
+]
+
 logger.info(f"STATUS:: Chat started with model '{MODEL}'")
 
 # ────────── WHISPER AUDIO SETUP ──────────────────────────────────────────────
@@ -379,23 +382,22 @@ def _process_chunk_by_words(word_buffer: str, min_length: int = 30) -> Tuple[str
 def _reset_chat_session() -> None:
     """Reset the chat session with error recovery.
     
-    Attempts to rewind the current chat session or creates a new one
-    if rewind fails. Handles global chat variable updates.
+    Clears conversation history and starts fresh.
     """
-    global chat
+    global conversation_history
     try:
         logger.info("CHUNK::[RECOVERING]")
-        # Try to rewind the broken conversation
-        if hasattr(chat, 'rewind'):
-            chat.rewind()
-        
-        # Create fresh chat session as backup
-        chat = genai.GenerativeModel(MODEL, system_instruction=SYSTEM_PROMPT).start_chat()
+        # Reset conversation history
+        conversation_history = [
+            {"role": "system", "content": SYSTEM_PROMPT}
+        ]
         
     except Exception as rewind_error:
-        logger.warning(f"CHUNK::[WARNING] Chat rewind failed: {rewind_error}")
-        # Create completely new chat session
-        chat = genai.GenerativeModel(MODEL, system_instruction=SYSTEM_PROMPT).start_chat()
+        logger.warning(f"CHUNK::[WARNING] Chat reset failed: {rewind_error}")
+        # Create completely new conversation history
+        conversation_history = [
+            {"role": "system", "content": SYSTEM_PROMPT}
+        ]
 
 def _fallback_non_streaming(prompt: str) -> None:
     """Fallback to non-streaming response when streaming fails.
@@ -406,19 +408,28 @@ def _fallback_non_streaming(prompt: str) -> None:
     Sends a non-streaming request to the AI model and outputs
     the response in paragraph chunks for better readability.
     """
-    global chat
+    global conversation_history
     try:
         logger.info("CHUNK::[FALLBACK]")
-        response = chat.send_message(
-            prompt, stream=False,
-            generation_config={
-                "temperature": 0.7,
-                "max_output_tokens": 2048
-            }
+        
+        # Add user message to history
+        conversation_history.append({"role": "user", "content": prompt})
+        
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=conversation_history,
+            temperature=GENERATION_CONFIG["temperature"],
+            max_tokens=GENERATION_CONFIG["max_tokens"],
+            top_p=GENERATION_CONFIG["top_p"]
         )
         
+        assistant_message = response.choices[0].message.content
+        
+        # Add assistant response to history
+        conversation_history.append({"role": "assistant", "content": assistant_message})
+        
         # Send in paragraphs for better readability
-        paragraphs = response.text.split('\n\n')
+        paragraphs = assistant_message.split('\n\n')
         for paragraph in paragraphs:
             if paragraph.strip():
                 logger.info(f"CHUNK::{paragraph.strip()}")
@@ -437,45 +448,51 @@ def _stream_live(prompt: str) -> None:
     complete lines, then sentences, then word boundaries for optimal
     readability. Includes comprehensive error recovery mechanisms.
     """
-    global chat
+    global conversation_history
     logger.info("CHUNK::[THINKING]")
     
     try:
-        iterator = chat.send_message(
-            prompt, stream=True,
-            generation_config={
-                "temperature": 0.7,
-                "max_output_tokens": 2048,
-                "top_p": 0.9,
-                "top_k": 40
-            }
+        # Add user message to history
+        conversation_history.append({"role": "user", "content": prompt})
+        
+        # Create streaming request
+        stream = client.chat.completions.create(
+            model=MODEL,
+            messages=conversation_history,
+            temperature=GENERATION_CONFIG["temperature"],
+            max_tokens=GENERATION_CONFIG["max_tokens"],
+            top_p=GENERATION_CONFIG["top_p"],
+            presence_penalty=GENERATION_CONFIG["presence_penalty"],
+            frequency_penalty=GENERATION_CONFIG["frequency_penalty"],
+            stream=True
         )
 
         word_buffer = ""
+        full_response = ""
         
-        for part in iterator:
-            try:
-                chunk = part.text
-            except ValueError:
-                # Safety filter triggered, try non-streaming
-                logger.info("CHUNK::[SAFETY_FILTER]")
-                break
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                text = chunk.choices[0].delta.content
+                word_buffer += text
+                full_response += text
                 
-            if not chunk:
-                continue
-                
-            word_buffer += chunk
-            
-            # Process chunks in order of preference: lines, sentences, then words
-            word_buffer, processed = _process_chunk_by_lines(word_buffer)
-            if not processed:
-                word_buffer, processed = _process_chunk_by_sentences(word_buffer)
+                # Process chunks in order of preference: lines, sentences, then words
+                word_buffer, processed = _process_chunk_by_lines(word_buffer)
                 if not processed:
-                    word_buffer, _ = _process_chunk_by_words(word_buffer)
+                    word_buffer, processed = _process_chunk_by_sentences(word_buffer)
+                    if not processed:
+                        word_buffer, _ = _process_chunk_by_words(word_buffer)
         
         # Send remaining buffer
         if word_buffer.strip():
             logger.info(f"CHUNK::{word_buffer.strip()}")
+        
+        # Add complete response to conversation history
+        conversation_history.append({"role": "assistant", "content": full_response})
+        
+        # Keep conversation history manageable (last 10 exchanges)
+        if len(conversation_history) > 21:  # system + 10 user/assistant pairs
+            conversation_history = [conversation_history[0]] + conversation_history[-20:]
             
     except Exception as e:
         logger.error(f"CHUNK::[ERROR] Streaming failed: {e}")
@@ -487,9 +504,8 @@ def _stream_live(prompt: str) -> None:
 def ask_ai() -> None:
     """Process the last transcribed text and send it to the AI model.
     
-    Takes the globally stored transcription result, enhances it with
-    context instructions, and starts a background thread to stream
-    the AI response back to the UI.
+    Takes the globally stored transcription result and starts a background 
+    thread to stream the AI response back to the UI.
     """
     q = last_txt.strip()
     if not q:
@@ -497,17 +513,10 @@ def ask_ai() -> None:
         logger.error(f"{Messages.CHUNK_PREFIX}{Messages.END}")
         return
     
-    # Provide better context for the AI
-    enhanced_prompt = f"""
-Please answer this question directly and thoroughly:
-
-"{q}"
-
-If this is about a specific tool, technology, or concept, explain what it is, how it works, and provide practical examples. Give a complete, informative answer like ChatGPT would.
-"""
-    
+    # Send the question directly without additional prompting
+    # The system prompt already handles the interview-style formatting
     threading.Thread(target=_stream_live,
-                     args=(enhanced_prompt,),
+                     args=(q,),
                      daemon=True).start()
 
 # ────────── CLI LOOP ────────────────────────────────────────────────────────

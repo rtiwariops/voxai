@@ -462,6 +462,21 @@
 
   // --- helpers ----------------------------------------------------------
   function appendTextToResponse(text) {
+    // Handle headings (### format with numbers)
+    if (text.trim().match(/^###\s+\d+\./)) {
+      startNewParagraph();
+      const heading = document.createElement('h4');
+      heading.textContent = text.replace(/^###\s+/, '').trim();
+      heading.style.color = '#00d2ff';
+      heading.style.marginTop = '1.5rem';
+      heading.style.marginBottom = '0.75rem';
+      heading.style.fontSize = '1.2rem';
+      heading.style.fontWeight = '700';
+      answerRoot.appendChild(heading);
+      currentP = null;
+      return;
+    }
+    
     // Handle headings (## format)
     if (text.trim().startsWith('## ')) {
       const heading = document.createElement('h4');
@@ -513,8 +528,26 @@
       answerRoot.appendChild(currentParagraph);
     }
     
-    // Add the text
-    currentParagraph.appendChild(document.createTextNode(text));
+    // Process bold text **text**
+    if (text.includes('**')) {
+      const parts = text.split(/\*\*/);
+      for (let i = 0; i < parts.length; i++) {
+        if (i % 2 === 1) {
+          // This is bold text
+          const bold = document.createElement('strong');
+          bold.textContent = parts[i];
+          bold.style.color = '#00d2ff';
+          bold.style.fontWeight = '700';
+          currentParagraph.appendChild(bold);
+        } else if (parts[i]) {
+          // Regular text
+          currentParagraph.appendChild(document.createTextNode(parts[i]));
+        }
+      }
+    } else {
+      // Add normal text
+      currentParagraph.appendChild(document.createTextNode(text));
+    }
     
     // Auto-scroll to bottom
     answerRoot.scrollTop = answerRoot.scrollHeight;
